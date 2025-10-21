@@ -16,14 +16,13 @@ function test_im(image)
     testing = imread(image);
     im_blue = testing(:, :, 3);
 
-    im_smooth = imgaussfilt(im_blue,8);
-
-    im_contrast = im_smooth.^2;
+    im_
+    
+    im_contrast = im_blue.^2;
 
     im_sobel = edge(im_contrast, 'log');
    
-    imshow(im_contrast);
-    % imshow(im_sobel);
+    imshow(im_sobel);
 
     % imfindcircles(im_contrast, [100 700], ...
     %     ObjectPolarity="dark", ...
