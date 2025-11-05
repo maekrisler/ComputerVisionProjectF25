@@ -75,22 +75,23 @@ function xy = object_detection_test(final_images)
 
     % use morphology to close the circles
     foregroundMask = imclose(foregroundMask, strel('disk', 20));
-    
 
     % Display results
     figure;
     subplot(1,2,1); imshow(foregroundImage); title('Input Image');
     subplot(1,2,2); imshow(foregroundMask); title('Detected Foreground');
 
-    [y, x] = find(foregroundMask);
+    edges = edge(foregroundMask, 'Canny');
+
+    [y, x] = find(edges);
 
     x = double(x);
     y = double(y);
 
     xy = [x';y'];
 
-
 end
+
 
 
 function Ransac_Points_to_Fit(xy) 
@@ -123,26 +124,33 @@ function Ransac_Points_to_Fit(xy)
         y = random_points(2, :);
        
 
+        % get three points to fit a circle
+        
+        % TODO --> I think the math for this is wrong
+        % I based my solution off the following example
+        % https://computervision-projects.firebaseapp.com/assignment2 
 
-        % --- Fit a circle through 3 points ---
         % Build linear system: [x y 1] * [A; B; C] = -(x.^2 + y.^2)
         A_mat = [x, y, ones(size(x))];
         b_vec = -(x.^2 + y.^2);
         
-        params = A_mat \ b_vec;  % solve least-squares for A, B, C
+        % solve least-squares for A, B, C
+        params = A_mat \ b_vec;
         
         % Extract circle center and radius
         a = -params(1) / 2;
         b = -params(2) / 2;
         r = sqrt((params(1)^2 + params(2)^2)/4 - params(3));
         
-        % --- Compute distances of all points to the circle ---
+        % calculate dist of all points to the circle 
         x_all = xy(1, :);
         y_all = xy(2, :);
+        % [x y 1] * [A; B; C] = -(x.^2 + y.^2)
         distances = abs(sqrt((x_all - a).^2 + (y_all - b).^2) - r);
         
-        % Define inliers: points whose distance to circle boundary < threshold
-        threshold = 0.1;  % adjust for your scale
+        % get all inliers (points whose distance to circle boundary <
+        % threshold)
+        threshold = 0.1;
         inliers = distances < threshold;
         num_inliers = sum(inliers);
         
@@ -154,12 +162,15 @@ function Ransac_Points_to_Fit(xy)
 
     end
 
-    % plot the parabola on the gaph of points
-    hold on;
-    x_values = linspace(min(xy(1,:)), max(xy(1,:)), 1000);
-    % ployval gets the parabola based on the best one found
-    y_values = polyval( best_circle, x_values );
-    plot( x_values, y_values, 'w-', 'LineWidth', 3 );
+    % plot value
+    figure; hold on;
+    % reverse Y for correct plotting ? 
+    set(gca, 'YDir', 'reverse');
+    % plot xy vals over image
+    plot(xy(1,:), xy(2,:), 'k.');
+    viscircles([best_circle(1), best_circle(2)], best_circle(3), 'Color', 'r');
+    title('RANSAC Circle Fit');
+    axis equal;
 
 end
 
