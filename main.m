@@ -27,8 +27,14 @@ function main()
 
     end
 
-    xy = object_detection_test(final_images);
+    % testing foreground detector
+    % xy = object_detection_test(final_images);
+    % 
+    % Ransac_Points_to_Fit(xy);
 
+    % testing example using b star and threshold
+    image = imread("IMPORTANT_TEST.jpg");
+    xy = isolate_yellow(image);
     Ransac_Points_to_Fit(xy);
 
 end
@@ -91,7 +97,6 @@ function xy = object_detection_test(final_images)
 
 
 end
-
 
 function Ransac_Points_to_Fit(xy) 
 
@@ -164,28 +169,56 @@ function Ransac_Points_to_Fit(xy)
 end
 
 
+function xy = isolate_yellow(image)
 
-function test_im(image)
+    % take b* star of image
+    im_lab = rgb2lab(image);
+    im_b_star = im_lab(:, :, 3);
+    im_a_star = im_lab(:, :, 2);
 
-    testing = imread(image);
-    im_blue = testing(:, :, 3);
+    % normalize b* from [-128, 127] to [0, 1]
+    im_b_star = (im_b_star + 128) / 255;
+    im_a_star = (im_a_star + 128) / 255;
 
-    im_smooth = imgaussfilt(im_blue,8);
+    b_thresh = 0.70;
 
-    im_contrast = im_smooth.^2;
+    figure;
 
-    im_sobel = edge(im_contrast, 'log');
-   
-    figure();
-    imshow(im_contrast);
-    figure();
-    imshow(im_sobel);
+    % only display where b* is above certain threshold
+    im_yellow = im_b_star > b_thresh;
 
-    imfindcircles(im_contrast, [100 700], ...
-        ObjectPolarity="dark", ...
-        Sensitivity=0.92, ...
-        EdgeThreshold=0.1)
+    % remove little isolated blips
+    im_yellow = imopen(im_yellow, strel('disk', 5));
 
+    imshow(im_yellow);
 
+    [y, x] = find(im_yellow);
+
+    x = double(x);
+    y = double(y);
+
+    xy = [x';y'];
 
 end
+
+% function test_im(image)
+% 
+%     testing = imread(image);
+%     im_blue = testing(:, :, 3);
+% 
+%     im_smooth = imgaussfilt(im_blue,8);
+% 
+%     im_contrast = im_smooth.^2;
+% 
+%     im_sobel = edge(im_contrast, 'log');
+% 
+%     figure();
+%     imshow(im_contrast);
+%     figure();
+%     imshow(im_sobel);
+% 
+%     imfindcircles(im_contrast, [100 700], ...
+%         ObjectPolarity="dark", ...
+%         Sensitivity=0.92, ...
+%         EdgeThreshold=0.1)
+% end
