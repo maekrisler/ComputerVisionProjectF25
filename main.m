@@ -150,7 +150,7 @@ function Ransac_Points_to_Fit(xy)
         
         % get all inliers (points whose distance to circle boundary <
         % threshold)
-        threshold = 0.1;
+        threshold = 500;
         inliers = distances < threshold;
         num_inliers = sum(inliers);
         
