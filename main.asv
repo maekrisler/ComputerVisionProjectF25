@@ -38,10 +38,8 @@ function main()
 
     im_kmeans = kmeans2(image);
 
-    get_hist(im_kmeans);
-
-    % xy = isolate_yellow(im_kmeans);
-    % Ransac_Points_to_Fit(xy, height, width);
+    xy = isolate_yellow(im_kmeans);
+    Ransac_Points_to_Fit(xy, height, width);
 
     
 
@@ -313,31 +311,11 @@ function get_hist(image)
 
     [rows, cols] = size(im_a_star);
 
-    num_bins = 3;
+    num_bins = 3
 
     row_hist = zeros(rows, num_bins);
-    col_hist = zeros(cols, num_bins);
 
     for r = 1:rows
-        row_hist(r, :) = histcounts(im_a_star(r, :), num_bins);
-    end
-
-    for c = 1:cols
-        col_hist(c, :) = histcounts(im_a_star(:, c), num_bins);
-    end
-
-    figure;
-    subplot(2, 1, 1);
-    imshow(row_hist);
-    title("row hist");
-
-    subplot(2, 1, 2);
-    imshow(col_hist);
-    title("col hist");
-
-
-end
-
-
+        row_hist()
 
 
