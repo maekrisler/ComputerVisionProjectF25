@@ -32,18 +32,33 @@ function main()
     
 
     % testing example using b star and threshold
-    image = imread("IMPORTANT_TEST2.jpg");
-    
-    [height, width, c] = size(image);
-
-    im_kmeans = kmeans2(image);
-
-    get_hist(im_kmeans);
+    % image = imread("IMPORTANT_TEST2.jpg");
+    % 
+    % [height, width, c] = size(image);
+    % 
+    % im_kmeans = kmeans2(image);
+    % 
+    % get_hist(im_kmeans);
 
     % xy = isolate_yellow(im_kmeans);
     % Ransac_Points_to_Fit(xy, height, width);
 
-    
+    % perfect circle test
+    % perfect_circle = imread("PERFECT_CIRCLE_TEST.jpg");
+    % perfect_circle = rgb2gray(perfect_circle);
+    % circle_edges = edge(perfect_circle, "canny");
+    % [xy, out_image] = isolate_yellow(perfect_circle);
+    % [centers, radii, metric] = imfindcircles(perfect_circle, [100 200]);
+
+    % test on image
+    important_test = imread("IMPORTANT_TEST2.jpg");
+    [xy, out_image] = isolate_yellow(important_test);
+    [centers, radii, metric] = imfindcircles(out_image, [100 300], 'ObjectPolarity', 'bright', 'Sensitivity', 0.95);
+
+    % draw found circles over image
+    imshow(out_image);
+    hold on;
+    viscircles(centers, radii,'EdgeColor','b');
 
 end
 
@@ -214,7 +229,7 @@ function Ransac_Points_to_Fit(xy, height, width)
 end
 
 
-function xy = isolate_yellow(image)
+function [xy, out_image] = isolate_yellow(image)
 
     % take b* star of image
     im_lab = rgb2lab(image);
@@ -225,7 +240,7 @@ function xy = isolate_yellow(image)
     im_b_star = (im_b_star + 128) / 255;
     im_a_star = (im_a_star + 128) / 255;
 
-    b_thresh = 0.70;
+    b_thresh = 0.7;
 
     figure;
 
@@ -234,6 +249,13 @@ function xy = isolate_yellow(image)
 
     % remove little isolated blips
     im_yellow = imopen(im_yellow, strel('disk', 5));
+
+    % fill in areas completely surrounded by whtie
+    im_yellow = imfill(im_yellow, 'holes');
+
+    out_image = im_yellow;
+
+    imshow(out_image);
 
     % get the edges from isolated image
     im_edges = edge(im_yellow, 'Canny');
@@ -247,7 +269,6 @@ function xy = isolate_yellow(image)
     y = double(y);
 
     xy = [x';y'];
-
 end
 
 
