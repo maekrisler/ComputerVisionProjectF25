@@ -51,9 +51,9 @@ function main()
     % [centers, radii, metric] = imfindcircles(perfect_circle, [100 200]);
 
     % test on image
-    important_test = imread("IMPORTANT_TEST.jpg");
+    important_test = imread("IMPORTANT_TEST2.jpg");
     [xy, out_image] = isolate_yellow(important_test);
-    [centers, radii, metric] = imfindcircles(out_image, [3 100], 'ObjectPolarity', 'bright', 'Sensitivity', 0.85);
+    [centers, radii, metric] = imfindcircles(out_image, [100 300], 'ObjectPolarity', 'bright', 'Sensitivity', 0.95);
 
     % draw found circles over image
     imshow(out_image);
@@ -61,6 +61,70 @@ function main()
     viscircles(centers, radii,'EdgeColor','b');
 
 end
+
+%
+% Goes through all jpgs in an input image, attempts to draw circles over
+% trail markers if present, then saves to 2 separate folders depending on
+% if a marker was found or not.
+%
+function classify_images(input_dir)
+
+    output_trail_dir = "Found Trail Markers";
+    output_no_trail_dir = "No Trail Markers";
+
+    % Create output folders if they don't exist
+    if exist(output_trail_dir, 'dir')
+        delete(fullfile(output_trail_dir, '*'));
+    else
+        mkdir(output_trail_dir);
+    end
+
+    if exist(output_no_trail_dir, 'dir')
+        delete(fullfile(output_no_trail_dir, '*'));
+    else
+        mkdir(output_no_trail_dir);
+    end
+
+
+    % get all jpg images in the input folder
+    image_files = dir(fullfile(input_dir, '*.jpg'));
+
+    for i = 1:length(image_files)
+
+        % get full path to image
+        img_path = fullfile(input_dir, image_files(i).name);
+        fprintf("Processing %s...\n", image_files(i).name);
+        img = imread(img_path);
+
+        % do some preprocessing on image
+        [xy, out_image] = isolate_yellow(img);
+
+        % look for circles in the processed image
+        [centers, radii] = imfindcircles(out_image, ...
+            [100 300], 'ObjectPolarity', 'bright', 'Sensitivity', 0.95);
+
+        % ---- Option A: Draw circles WITHOUT imshow using insertShape ----
+        if ~isempty(centers)
+            % Convert center+radii into [x y r]
+            circles = [centers radii];
+
+            % Draw circles
+            out_with_circles = insertShape(out_image, ...
+                'Circle', circles, ...
+                'Color', 'blue', 'LineWidth', 3);
+        else
+            out_with_circles = out_image;
+        end
+
+        % Save result to output folder
+        output_filename = fullfile(output_dir, image_files(i).name);
+        imwrite(out_with_circles, output_filename);
+
+    end
+    
+    fprintf("Done processing all photos.");
+end
+
 
 
 % this does a good job of getting the edges in the background and on 
@@ -240,7 +304,7 @@ function [xy, out_image] = isolate_yellow(image)
     im_b_star = (im_b_star + 128) / 255;
     im_a_star = (im_a_star + 128) / 255;
 
-    b_thresh = 0.70;
+    b_thresh = 0.7;
 
     figure;
 

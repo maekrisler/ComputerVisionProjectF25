@@ -50,17 +50,80 @@ function main()
     % [xy, out_image] = isolate_yellow(perfect_circle);
     % [centers, radii, metric] = imfindcircles(perfect_circle, [100 200]);
 
-    % test on image
-    important_test = imread("IMPORTANT_TEST2.jpg");
-    [xy, out_image] = isolate_yellow(important_test);
-    [centers, radii, metric] = imfindcircles(out_image, [100 300], 'ObjectPolarity', 'bright', 'Sensitivity', 0.95);
-
-    % draw found circles over image
-    imshow(out_image);
-    hold on;
-    viscircles(centers, radii,'EdgeColor','b');
+    classify_images("test_images");
 
 end
+
+%
+% Goes through all jpgs in an input image, attempts to draw circles over
+% trail markers if present, then saves to 2 separate folders depending on
+% if a marker was found or not.
+%
+function classify_images(input_dir)
+
+    output_trail_dir = "Found Trail Markers";
+    output_no_trail_dir = "No Trail Markers";
+
+    % Create output folders if they don't exist
+    if exist(output_trail_dir, 'dir')
+        delete(fullfile(output_trail_dir, '*'));
+    else
+        mkdir(output_trail_dir);
+    end
+
+    if exist(output_no_trail_dir, 'dir')
+        delete(fullfile(output_no_trail_dir, '*'));
+    else
+        mkdir(output_no_trail_dir);
+    end
+
+
+    % get all jpg images in the input folder
+    image_files = dir(fullfile(input_dir, '*.jpg'));
+
+    for i = 1:length(image_files)
+
+        % get full path to image
+        img_path = fullfile(input_dir, image_files(i).name);
+        fprintf("Processing %s...\n", image_files(i).name);
+        img = imread(img_path);
+
+        % do some preprocessing on image
+        [xy, out_image] = isolate_yellow(img);
+
+        % look for circles in the processed image
+        [centers, radii] = imfindcircles(out_image, ...
+            [100 300], 'ObjectPolarity', 'bright', 'Sensitivity', 0.96);
+
+        % if circles found...
+        if ~isempty(centers)
+
+            fprintf("Found a trail marker in %s\n", image_files(i).name);
+
+            % convert center+radii into [x y r]
+            circles = [centers radii];
+
+            % draw circles over original image
+            out_with_circles = insertShape(img, ...
+                'Circle', circles, ...
+                'Color', 'red', 'LineWidth', 5);
+
+            % output to found trail markers directory
+            output_filename = fullfile(output_trail_dir, image_files(i).name);
+            imwrite(out_with_circles, output_filename);
+        else
+            % no circles found, output original image to no trail markers
+            % directory
+            fprintf("No trail markers found in %s\n", image_files(i).name);
+            
+            output_filename = fullfile(output_no_trail_dir, image_files(i).name);
+            imwrite(img, output_filename);
+        end
+    end
+    
+    fprintf("Done processing all photos.");
+end
+
 
 
 % this does a good job of getting the edges in the background and on 
@@ -234,33 +297,35 @@ function [xy, out_image] = isolate_yellow(image)
     % take b* star of image
     im_lab = rgb2lab(image);
     im_b_star = im_lab(:, :, 3);
-    im_a_star = im_lab(:, :, 2);
 
     % normalize b* from [-128, 127] to [0, 1]
     im_b_star = (im_b_star + 128) / 255;
-    im_a_star = (im_a_star + 128) / 255;
 
-    b_thresh = 0.7;
+    im_b_star = adapthisteq(im_b_star);
+
+    b_thresh = 0.65;
 
     figure;
 
     % only display where b* is above certain threshold
     im_yellow = im_b_star > b_thresh;
 
-    % remove little isolated blips
-    im_yellow = imopen(im_yellow, strel('disk', 5));
+    % % remove little isolated blips
+    % im_yellow = imopen(im_yellow, strel('disk', 5));
+    % 
+    % % remove little isolated blips
+    % im_yellow = imclose(im_yellow, strel('disk', 5));
 
     % fill in areas completely surrounded by whtie
     im_yellow = imfill(im_yellow, 'holes');
 
     out_image = im_yellow;
 
+    figure;
     imshow(out_image);
 
     % get the edges from isolated image
     im_edges = edge(im_yellow, 'Canny');
-
-    imshow(im_edges);
 
     % convert to a [x, y] mtx for ransac
     [y, x] = find(im_edges);
