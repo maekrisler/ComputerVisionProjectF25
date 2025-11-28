@@ -5,63 +5,13 @@
 function main()
 
     % get the folder name with all image files
-    folder_name = 'test_images';
+    % folder_name = 'ADK_Images_Batch_B';
+    % 
+    % classify_images(folder_name);
 
-    % get all .jpg files from folder (for object_detection_test)
-    image_files = dir(fullfile(folder_name, '*.jpg'));
-
-    classify_images("test_images");
-
-end
-
-
-function perfect_circle_test(image_name)
-
-    % perfect circle test
-    perfect_circle = imread(image_name);
-    perfect_circle = rgb2gray(perfect_circle);
-    circle_edges = edge(perfect_circle, "canny");
-    [xy, out_image] = isolate_yellow(perfect_circle);
-    [centers, radii, metric] = imfindcircles(perfect_circle, [100 200]);
-
-end
-
-
-function b_star_test(image_name)
-
-    % testing example using b star and threshold
-    image = imread(image_name);
-
-    [height, width, c] = size(image);
-
-    im_kmeans = kmeans2(image);
-
-    get_hist(im_kmeans);
-
-    xy = isolate_yellow(im_kmeans);
-    Ransac_Points_to_Fit(xy, height, width);
-
-end
-
-
-function object_detection(image_files)
-
-    % init array for all read images
-    final_images = cell(length(image_files), 1);
-
-    for image = 1:length(image_files)
-        % get path to image
-        path = fullfile(folder_name, image_files(image).name);
-        % get the file name
-        im_folder_image = imread(path);
-
-        % add image to final image list
-        final_images{image} = im_folder_image;
-
-    end
-
-    testing foreground detector
-    xy = object_detection_test(final_images);
+    % Histogram back prop testing
+    image = 'trailmarkerOutliers/IMG_20251004_154531932_HDR.jpg';
+    get_hist(image)
 
 end
 
@@ -138,7 +88,9 @@ end
 
 
 
-function xy = object_detection_test(final_images)
+function xy = object_detection_test(folder_name)
+    % get all .jpg files from folder (for object_detection_test)
+    image_files = dir(fullfile(folder_name, '*.jpg'));
 
     % grab foreground image
     bim_name = "IMPORTANT_TEST.jpg";
@@ -328,8 +280,8 @@ function [xy, out_image] = isolate_yellow(image)
 
     out_image = im_yellow;
 
-    figure;
-    imshow(out_image);
+    % figure;
+    % imshow(out_image);
 
     % get the edges from isolated image
     im_edges = edge(im_yellow, 'Canny');
@@ -341,6 +293,133 @@ function [xy, out_image] = isolate_yellow(image)
     y = double(y);
 
     xy = [x';y'];
+end
+
+
+% Uses histogram back propogration with b* channel to find most
+% concentrated yellow in the given image
+function yellow_map = get_hist(image)
+
+    % read in image and convert to double
+    im_read = imread(image);
+    im_double = im2double(im_read);
+    im_lab = rgb2lab(im_double);
+   
+    % get a and b star channels from LAB
+    im_b_star = im_lab(:, :, 3);
+    
+    % normalize b* from [-128, 127] to [0, 1]
+    im_b_star = (im_b_star + 128) / 255;
+
+    im_b_star = adapthisteq(im_b_star);
+
+    b_thresh = 0.65;
+
+    % only display where b* is above certain threshold
+    im_yellow = im_b_star > b_thresh;
+
+    % get rows and cols and pre allocate yellow array
+    [rows, cols] = size(im_b_star);
+    row_yellow_count = zeros(rows, 1);
+
+    % for every row in the image
+    for row = 1:rows
+        % get the yellow row val
+        row_yel = im_yellow(row, :);
+        % increment hist array
+        row_yellow_count(row) = sum(row_yel);
+    end
+
+    col_yellow_count = zeros(cols, 1);
+
+    % for every col in the image
+    for col = 1:cols
+        % get the yellow row val
+        col_yel = im_yellow(:, col);
+        % increment hist array
+        col_yellow_count(col) = sum(col_yel);
+    end
+
+    % normalize both hist to [0, 1]
+    % multiply together to get the area where feature is most likley to be
+
+    normalized_rows = row_yellow_count / max(row_yellow_count);
+    normalized_cols = col_yellow_count / max(col_yellow_count);
+
+    % pad to make them the same length to avoid mtx errors
+    max_len = max(length(normalized_rows), length(normalized_cols));
+    normalized_rows = [normalized_rows; zeros(max_len - length(normalized_rows), 1)];
+    normalized_cols = [normalized_cols; zeros(max_len - length(normalized_cols), 1)];
+
+    % multiply for back projection
+    yellow_map = normalized_cols .* normalized_rows;
+
+    % display for testing
+    figure;
+    subplot(1, 2, 1);
+    imagesc(yellow_map);
+    colorbar;
+    title("Histogram Back Projection of Yellow");
+
+    subplot(1, 2, 2);
+    bar(yellow_map);
+    title("Histogram Back Projection of Yellow");
+
+
+end
+
+
+% tests to fit a perfect circle
+function perfect_circle_test(image_name)
+
+    % perfect circle test
+    perfect_circle = imread(image_name);
+    perfect_circle = rgb2gray(perfect_circle);
+    circle_edges = edge(perfect_circle, "canny");
+    [xy, out_image] = isolate_yellow(perfect_circle);
+    [centers, radii, metric] = imfindcircles(perfect_circle, [100 200]);
+
+end
+
+
+% tests using bstar thresholding 
+function b_star_test(image_name)
+
+    % testing example using b star and threshold
+    image = imread(image_name);
+
+    [height, width, c] = size(image);
+
+    im_kmeans = kmeans2(image);
+
+    get_hist(im_kmeans);
+
+    xy = isolate_yellow(im_kmeans);
+    Ransac_Points_to_Fit(xy, height, width);
+
+end
+
+
+% test using the matlab object detection package
+function object_detection(image_files)
+
+    % init array for all read images
+    final_images = cell(length(image_files), 1);
+
+    for image = 1:length(image_files)
+        % get path to image
+        path = fullfile(folder_name, image_files(image).name);
+        % get the file name
+        im_folder_image = imread(path);
+
+        % add image to final image list
+        final_images{image} = im_folder_image;
+
+    end
+
+    testing foreground detector
+    xy = object_detection_test(final_images);
+
 end
 
 
@@ -394,43 +473,5 @@ function im_segmented = kmeans2(image)
     imshow(im_segmented);
 
 end
-
-
-% TODO: histogram back propogration with the result of kmeans to find most
-% concentrated yellow
-
-function get_hist(image)
-
-    im_lab = rgb2lab(image);
-    im_a_star = im_lab(:, :, 2);
-
-    [rows, cols] = size(im_a_star);
-
-    num_bins = 3;
-
-    row_hist = zeros(rows, num_bins);
-    col_hist = zeros(cols, num_bins);
-
-    for r = 1:rows
-        row_hist(r, :) = histcounts(im_a_star(r, :), num_bins);
-    end
-
-    for c = 1:cols
-        col_hist(c, :) = histcounts(im_a_star(:, c), num_bins);
-    end
-
-    figure;
-    subplot(2, 1, 1);
-    imshow(row_hist);
-    title("row hist");
-
-    subplot(2, 1, 2);
-    imshow(col_hist);
-    title("col hist");
-
-
-end
-
-
 
 

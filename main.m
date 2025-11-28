@@ -5,12 +5,13 @@
 function main()
 
     % get the folder name with all image files
-    folder_name = 'test_images';
+    % folder_name = 'ADK_Images_Batch_B';
 
-    % get all .jpg files from folder (for object_detection_test)
-    image_files = dir(fullfile(folder_name, '*.jpg'));
+    % classify_images(folder_name);
 
-    classify_images("test_images");
+    % Histogram back prop testing
+    image = 'trailmarkerOutliers/IMG_20251004_154531932_HDR.jpg';
+    get_hist(image)
 
 end
 
@@ -87,7 +88,9 @@ end
 
 
 
-function xy = object_detection_test(final_images)
+function xy = object_detection_test(folder_name)
+    % get all .jpg files from folder (for object_detection_test)
+    image_files = dir(fullfile(folder_name, '*.jpg'));
 
     % grab foreground image
     bim_name = "IMPORTANT_TEST.jpg";
@@ -142,7 +145,231 @@ end
 
 
 
-% TODO: 
+
+function [xy, out_image] = isolate_yellow(image)
+
+    % take b* star of image
+    im_lab = rgb2lab(image);
+    im_b_star = im_lab(:, :, 3);
+
+    % normalize b* from [-128, 127] to [0, 1]
+    im_b_star = (im_b_star + 128) / 255;
+
+    im_b_star = adapthisteq(im_b_star);
+
+    b_thresh = 0.65;
+
+    figure;
+
+    % only display where b* is above certain threshold
+    im_yellow = im_b_star > b_thresh;
+
+    % % remove little isolated blips
+    % im_yellow = imopen(im_yellow, strel('disk', 5));
+    % 
+    % % remove little isolated blips
+    % im_yellow = imclose(im_yellow, strel('disk', 5));
+
+    % fill in areas completely surrounded by whtie
+    im_yellow = imfill(im_yellow, 'holes');
+
+    out_image = im_yellow;
+
+    % figure;
+    % imshow(out_image);
+
+    % get the edges from isolated image
+    im_edges = edge(im_yellow, 'Canny');
+
+    % convert to a [x, y] mtx for ransac
+    [y, x] = find(im_edges);
+
+    x = double(x);
+    y = double(y);
+
+    xy = [x';y'];
+end
+
+
+% Uses histogram back propogration with b* channel to find most
+% concentrated yellow in the given image
+function yellow_map = get_hist(image)
+
+    % read in image and convert to double
+    im_read = imread(image);
+    im_double = im2double(im_read);
+    im_lab = rgb2lab(im_double);
+   
+    % get a and b star channels from LAB
+    im_b_star = im_lab(:, :, 3);
+    
+    % normalize b* from [-128, 127] to [0, 1]
+    im_b_star = (im_b_star + 128) / 255;
+
+    im_b_star = adapthisteq(im_b_star);
+
+    b_thresh = 0.65;
+
+    % only display where b* is above certain threshold
+    im_yellow = im_b_star > b_thresh;
+
+    % get rows and cols and pre allocate yellow array
+    [rows, cols] = size(im_b_star);
+    row_yellow_count = zeros(rows, 1);
+
+    % for every row in the image
+    for row = 1:rows
+        % get the yellow row val
+        row_yel = im_yellow(row, :);
+        % increment hist array
+        row_yellow_count(row) = sum(row_yel);
+    end
+
+    col_yellow_count = zeros(cols, 1);
+
+    % for every col in the image
+    for col = 1:cols
+        % get the yellow row val
+        col_yel = im_yellow(:, col);
+        % increment hist array
+        col_yellow_count(col) = sum(col_yel);
+    end
+
+    % normalize both hist to [0, 1]
+    % multiply together to get the area where feature is most likley to be
+
+    normalized_rows = row_yellow_count / max(row_yellow_count);
+    normalized_cols = col_yellow_count / max(col_yellow_count);
+
+    % pad to make them the same length to avoid mtx errors
+    max_len = max(length(normalized_rows), length(normalized_cols));
+    normalized_rows = [normalized_rows; zeros(max_len - length(normalized_rows), 1)];
+    normalized_cols = [normalized_cols; zeros(max_len - length(normalized_cols), 1)];
+
+    % multiply for back projection
+    yellow_map = normalized_cols .* normalized_rows;
+
+    % display for testing
+    figure;
+    subplot(1, 2, 1);
+    imagesc(yellow_map);
+    colorbar;
+    title("Histogram Back Projection of Yellow");
+
+    subplot(1, 2, 2);
+    bar(yellow_map);
+    title("Histogram Back Projection of Yellow");
+
+
+end
+
+
+% tests to fit a perfect circle
+function perfect_circle_test(image_name)
+
+    % perfect circle test
+    perfect_circle = imread(image_name);
+    perfect_circle = rgb2gray(perfect_circle);
+    circle_edges = edge(perfect_circle, "canny");
+    [xy, out_image] = isolate_yellow(perfect_circle);
+    [centers, radii, metric] = imfindcircles(perfect_circle, [100 200]);
+
+end
+
+
+% tests using bstar thresholding 
+function b_star_test(image_name)
+
+    % testing example using b star and threshold
+    image = imread(image_name);
+
+    [height, width, c] = size(image);
+
+    im_kmeans = kmeans2(image);
+
+    get_hist(im_kmeans);
+
+    xy = isolate_yellow(im_kmeans);
+    Ransac_Points_to_Fit(xy, height, width);
+
+end
+
+
+% test using the matlab object detection package
+function object_detection(image_files)
+
+    % init array for all read images
+    final_images = cell(length(image_files), 1);
+
+    for image = 1:length(image_files)
+        % get path to image
+        path = fullfile(folder_name, image_files(image).name);
+        % get the file name
+        im_folder_image = imread(path);
+
+        % add image to final image list
+        final_images{image} = im_folder_image;
+
+    end
+
+    testing foreground detector
+    xy = object_detection_test(final_images);
+
+end
+
+
+function im_segmented = kmeans2(image)
+    % smooth image for noise removal
+    % im_smooth = noise_removal(image);
+    
+    % take b* channel from LAB image
+    im_lab = rgb2lab(image);
+    im_b_star = im_lab(:, :, 3);
+    im_a_star = im_lab(:, :, 2);  % Keep for visualization later
+    
+    % normalize b* to [0, 1] range for distance calculations
+    im_single_b = im2single(im_b_star);
+    
+    % get row and col dims to shape matrix
+    im_rows = size(im_single_b, 1);
+    im_cols = size(im_single_b, 2);
+    
+    % convert to 1D column vector for kmeans (only b* channel)
+    im_b_shaped = reshape(im_single_b, im_rows*im_cols, 1);
+    
+    % set k clusters and run kmeans
+    k = 5;
+    [cluster_idx, cluster_center] = kmeans(im_b_shaped, k, ...
+        "Distance", "sqeuclidean", 'Replicate', 3, 'MaxIter', 500);
+    
+    % reshape cluster indices back to 2D image
+    im_clustered = reshape(cluster_idx, im_rows, im_cols);
+    
+    % create colormap using lab values
+    % pick a luminance value for visualization
+    l_val = 60;
+    
+    % For visualization, use average a* value from image
+    a_mean = mean(im_a_star(:));
+    
+    % Combine L, a*, and cluster centers for b*
+    % cluster_center is now k x 1, so we need to add a* column
+    lab_colors = [l_val * ones(k, 1), a_mean * ones(k, 1), cluster_center];
+    
+    % convert to rgb from lab
+    rgb_colors = lab2rgb(lab_colors, 'OutputType', 'double');
+    
+    % ensure val range is normalized to [0, 1] for label2rgb
+    rgb_colors = max(min(rgb_colors, 1), 0);
+    
+    % Display clustered image
+    im_segmented = label2rgb(im_clustered, rgb_colors);
+    figure;
+    imshow(im_segmented);
+
+end
+
+
 
 function Ransac_Points_to_Fit(xy, height, width) 
 
@@ -246,195 +473,4 @@ function Ransac_Points_to_Fit(xy, height, width)
 
 
 end
-
-
-function [xy, out_image] = isolate_yellow(image)
-
-    % take b* star of image
-    im_lab = rgb2lab(image);
-    im_b_star = im_lab(:, :, 3);
-
-    % normalize b* from [-128, 127] to [0, 1]
-    im_b_star = (im_b_star + 128) / 255;
-
-    im_b_star = adapthisteq(im_b_star);
-
-    b_thresh = 0.65;
-
-    figure;
-
-    % only display where b* is above certain threshold
-    im_yellow = im_b_star > b_thresh;
-
-    % % remove little isolated blips
-    % im_yellow = imopen(im_yellow, strel('disk', 5));
-    % 
-    % % remove little isolated blips
-    % im_yellow = imclose(im_yellow, strel('disk', 5));
-
-    % fill in areas completely surrounded by whtie
-    im_yellow = imfill(im_yellow, 'holes');
-
-    out_image = im_yellow;
-
-    % figure;
-    % imshow(out_image);
-
-    % get the edges from isolated image
-    im_edges = edge(im_yellow, 'Canny');
-
-    % convert to a [x, y] mtx for ransac
-    [y, x] = find(im_edges);
-
-    x = double(x);
-    y = double(y);
-
-    xy = [x';y'];
-end
-
-
-function im_segmented = kmeans2(image)
-    % smooth image for noise removal
-    % im_smooth = noise_removal(image);
-    
-    % take b* channel from LAB image
-    im_lab = rgb2lab(image);
-    im_b_star = im_lab(:, :, 3);
-    im_a_star = im_lab(:, :, 2);  % Keep for visualization later
-    
-    % normalize b* to [0, 1] range for distance calculations
-    im_single_b = im2single(im_b_star);
-    
-    % get row and col dims to shape matrix
-    im_rows = size(im_single_b, 1);
-    im_cols = size(im_single_b, 2);
-    
-    % convert to 1D column vector for kmeans (only b* channel)
-    im_b_shaped = reshape(im_single_b, im_rows*im_cols, 1);
-    
-    % set k clusters and run kmeans
-    k = 5;
-    [cluster_idx, cluster_center] = kmeans(im_b_shaped, k, ...
-        "Distance", "sqeuclidean", 'Replicate', 3, 'MaxIter', 500);
-    
-    % reshape cluster indices back to 2D image
-    im_clustered = reshape(cluster_idx, im_rows, im_cols);
-    
-    % create colormap using lab values
-    % pick a luminance value for visualization
-    l_val = 60;
-    
-    % For visualization, use average a* value from image
-    a_mean = mean(im_a_star(:));
-    
-    % Combine L, a*, and cluster centers for b*
-    % cluster_center is now k x 1, so we need to add a* column
-    lab_colors = [l_val * ones(k, 1), a_mean * ones(k, 1), cluster_center];
-    
-    % convert to rgb from lab
-    rgb_colors = lab2rgb(lab_colors, 'OutputType', 'double');
-    
-    % ensure val range is normalized to [0, 1] for label2rgb
-    rgb_colors = max(min(rgb_colors, 1), 0);
-    
-    % Display clustered image
-    im_segmented = label2rgb(im_clustered, rgb_colors);
-    figure;
-    imshow(im_segmented);
-
-end
-
-
-% TODO: histogram back propogration with the result of kmeans to find most
-% concentrated yellow
-
-function get_hist(image)
-
-    im_lab = rgb2lab(image);
-    im_a_star = im_lab(:, :, 2);
-
-    [rows, cols] = size(im_a_star);
-
-    num_bins = 3;
-
-    row_hist = zeros(rows, num_bins);
-    col_hist = zeros(cols, num_bins);
-
-    for r = 1:rows
-        row_hist(r, :) = histcounts(im_a_star(r, :), num_bins);
-    end
-
-    for c = 1:cols
-        col_hist(c, :) = histcounts(im_a_star(:, c), num_bins);
-    end
-
-    figure;
-    subplot(2, 1, 1);
-    imshow(row_hist);
-    title("row hist");
-
-    subplot(2, 1, 2);
-    imshow(col_hist);
-    title("col hist");
-
-
-end
-
-
-% tests to fit a perfect circle
-function perfect_circle_test(image_name)
-
-    % perfect circle test
-    perfect_circle = imread(image_name);
-    perfect_circle = rgb2gray(perfect_circle);
-    circle_edges = edge(perfect_circle, "canny");
-    [xy, out_image] = isolate_yellow(perfect_circle);
-    [centers, radii, metric] = imfindcircles(perfect_circle, [100 200]);
-
-end
-
-
-% tests using bstar thresholding 
-function b_star_test(image_name)
-
-    % testing example using b star and threshold
-    image = imread(image_name);
-
-    [height, width, c] = size(image);
-
-    im_kmeans = kmeans2(image);
-
-    get_hist(im_kmeans);
-
-    xy = isolate_yellow(im_kmeans);
-    Ransac_Points_to_Fit(xy, height, width);
-
-end
-
-
-% test using the matlab object detection package
-function object_detection(image_files)
-
-    % init array for all read images
-    final_images = cell(length(image_files), 1);
-
-    for image = 1:length(image_files)
-        % get path to image
-        path = fullfile(folder_name, image_files(image).name);
-        % get the file name
-        im_folder_image = imread(path);
-
-        % add image to final image list
-        final_images{image} = im_folder_image;
-
-    end
-
-    testing foreground detector
-    xy = object_detection_test(final_images);
-
-end
-
-
-
-
 
