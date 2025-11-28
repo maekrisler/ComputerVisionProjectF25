@@ -4,63 +4,67 @@
 
 function main()
 
-    % image = "IMPORTANT_TEST.jpg";
-    % test_im(image);
-
     % get the folder name with all image files
-    % folder_name = 'test_images';
-    % 
-    % % get all .jpg files from folder
-    % image_files = dir(fullfile(folder_name, '*.jpg'));
-    % 
-    % % init array for all read images
-    % final_images = cell(length(image_files), 1);
-    % 
-    % for image = 1:length(image_files)
-    %     % get path to image
-    %     path = fullfile(folder_name, image_files(image).name);
-    %     % get the file name
-    %     im_folder_image = imread(path);
-    % 
-    %     % add image to final image list
-    %     final_images{image} = im_folder_image;
-    % 
-    % end
+    folder_name = 'test_images';
 
-    % testing foreground detector
-    % xy = object_detection_test(final_images);
-    
+    % get all .jpg files from folder (for object_detection_test)
+    image_files = dir(fullfile(folder_name, '*.jpg'));
 
-    % testing example using b star and threshold
-    % image = imread("IMPORTANT_TEST2.jpg");
-    % 
-    % [height, width, c] = size(image);
-    % 
-    % im_kmeans = kmeans2(image);
-    % 
-    % get_hist(im_kmeans);
-
-    % xy = isolate_yellow(im_kmeans);
-    % Ransac_Points_to_Fit(xy, height, width);
-
-    % perfect circle test
-    % perfect_circle = imread("PERFECT_CIRCLE_TEST.jpg");
-    % perfect_circle = rgb2gray(perfect_circle);
-    % circle_edges = edge(perfect_circle, "canny");
-    % [xy, out_image] = isolate_yellow(perfect_circle);
-    % [centers, radii, metric] = imfindcircles(perfect_circle, [100 200]);
-
-    % test on image
-    important_test = imread("IMPORTANT_TEST2.jpg");
-    [xy, out_image] = isolate_yellow(important_test);
-    [centers, radii, metric] = imfindcircles(out_image, [100 300], 'ObjectPolarity', 'bright', 'Sensitivity', 0.95);
-
-    % draw found circles over image
-    imshow(out_image);
-    hold on;
-    viscircles(centers, radii,'EdgeColor','b');
+    classify_images("test_images");
 
 end
+
+
+function perfect_circle_test(image_name)
+
+    % perfect circle test
+    perfect_circle = imread(image_name);
+    perfect_circle = rgb2gray(perfect_circle);
+    circle_edges = edge(perfect_circle, "canny");
+    [xy, out_image] = isolate_yellow(perfect_circle);
+    [centers, radii, metric] = imfindcircles(perfect_circle, [100 200]);
+
+end
+
+
+function b_star_test(image_name)
+
+    % testing example using b star and threshold
+    image = imread(image_name);
+
+    [height, width, c] = size(image);
+
+    im_kmeans = kmeans2(image);
+
+    get_hist(im_kmeans);
+
+    xy = isolate_yellow(im_kmeans);
+    Ransac_Points_to_Fit(xy, height, width);
+
+end
+
+
+function object_detection(image_files)
+
+    % init array for all read images
+    final_images = cell(length(image_files), 1);
+
+    for image = 1:length(image_files)
+        % get path to image
+        path = fullfile(folder_name, image_files(image).name);
+        % get the file name
+        im_folder_image = imread(path);
+
+        % add image to final image list
+        final_images{image} = im_folder_image;
+
+    end
+
+    testing foreground detector
+    xy = object_detection_test(final_images);
+
+end
+
 
 %
 % Goes through all jpgs in an input image, attempts to draw circles over
@@ -101,25 +105,32 @@ function classify_images(input_dir)
 
         % look for circles in the processed image
         [centers, radii] = imfindcircles(out_image, ...
-            [100 300], 'ObjectPolarity', 'bright', 'Sensitivity', 0.95);
+            [100 300], 'ObjectPolarity', 'bright', 'Sensitivity', 0.96);
 
-        % ---- Option A: Draw circles WITHOUT imshow using insertShape ----
+        % if circles found...
         if ~isempty(centers)
-            % Convert center+radii into [x y r]
+
+            fprintf("Found a trail marker in %s\n", image_files(i).name);
+
+            % convert center+radii into [x y r]
             circles = [centers radii];
 
-            % Draw circles
-            out_with_circles = insertShape(out_image, ...
+            % draw circles over original image
+            out_with_circles = insertShape(img, ...
                 'Circle', circles, ...
-                'Color', 'blue', 'LineWidth', 3);
+                'Color', 'red', 'LineWidth', 5);
+
+            % output to found trail markers directory
+            output_filename = fullfile(output_trail_dir, image_files(i).name);
+            imwrite(out_with_circles, output_filename);
         else
-            out_with_circles = out_image;
+            % no circles found, output original image to no trail markers
+            % directory
+            fprintf("No trail markers found in %s\n", image_files(i).name);
+            
+            output_filename = fullfile(output_no_trail_dir, image_files(i).name);
+            imwrite(img, output_filename);
         end
-
-        % Save result to output folder
-        output_filename = fullfile(output_dir, image_files(i).name);
-        imwrite(out_with_circles, output_filename);
-
     end
     
     fprintf("Done processing all photos.");
@@ -127,12 +138,7 @@ end
 
 
 
-% this does a good job of getting the edges in the background and on 
-% the trail marker
-% I'm thinking we can use these edges as input for ransac 
-% and fit it to a circle?
 function xy = object_detection_test(final_images)
-    % TODO: test vision.ForegroundDetector for finding object
 
     % grab foreground image
     bim_name = "IMPORTANT_TEST.jpg";
@@ -298,33 +304,35 @@ function [xy, out_image] = isolate_yellow(image)
     % take b* star of image
     im_lab = rgb2lab(image);
     im_b_star = im_lab(:, :, 3);
-    im_a_star = im_lab(:, :, 2);
 
     % normalize b* from [-128, 127] to [0, 1]
     im_b_star = (im_b_star + 128) / 255;
-    im_a_star = (im_a_star + 128) / 255;
 
-    b_thresh = 0.7;
+    im_b_star = adapthisteq(im_b_star);
+
+    b_thresh = 0.65;
 
     figure;
 
     % only display where b* is above certain threshold
     im_yellow = im_b_star > b_thresh;
 
-    % remove little isolated blips
-    im_yellow = imopen(im_yellow, strel('disk', 5));
+    % % remove little isolated blips
+    % im_yellow = imopen(im_yellow, strel('disk', 5));
+    % 
+    % % remove little isolated blips
+    % im_yellow = imclose(im_yellow, strel('disk', 5));
 
     % fill in areas completely surrounded by whtie
     im_yellow = imfill(im_yellow, 'holes');
 
     out_image = im_yellow;
 
+    figure;
     imshow(out_image);
 
     % get the edges from isolated image
     im_edges = edge(im_yellow, 'Canny');
-
-    imshow(im_edges);
 
     % convert to a [x, y] mtx for ransac
     [y, x] = find(im_edges);

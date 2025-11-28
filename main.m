@@ -4,55 +4,16 @@
 
 function main()
 
-    % image = "IMPORTANT_TEST.jpg";
-    % test_im(image);
-
     % get the folder name with all image files
-    % folder_name = 'test_images';
-    % 
-    % % get all .jpg files from folder
-    % image_files = dir(fullfile(folder_name, '*.jpg'));
-    % 
-    % % init array for all read images
-    % final_images = cell(length(image_files), 1);
-    % 
-    % for image = 1:length(image_files)
-    %     % get path to image
-    %     path = fullfile(folder_name, image_files(image).name);
-    %     % get the file name
-    %     im_folder_image = imread(path);
-    % 
-    %     % add image to final image list
-    %     final_images{image} = im_folder_image;
-    % 
-    % end
+    folder_name = 'test_images';
 
-    % testing foreground detector
-    % xy = object_detection_test(final_images);
-    
-
-    % testing example using b star and threshold
-    % image = imread("IMPORTANT_TEST2.jpg");
-    % 
-    % [height, width, c] = size(image);
-    % 
-    % im_kmeans = kmeans2(image);
-    % 
-    % get_hist(im_kmeans);
-
-    % xy = isolate_yellow(im_kmeans);
-    % Ransac_Points_to_Fit(xy, height, width);
-
-    % perfect circle test
-    % perfect_circle = imread("PERFECT_CIRCLE_TEST.jpg");
-    % perfect_circle = rgb2gray(perfect_circle);
-    % circle_edges = edge(perfect_circle, "canny");
-    % [xy, out_image] = isolate_yellow(perfect_circle);
-    % [centers, radii, metric] = imfindcircles(perfect_circle, [100 200]);
+    % get all .jpg files from folder (for object_detection_test)
+    image_files = dir(fullfile(folder_name, '*.jpg'));
 
     classify_images("test_images");
 
 end
+
 
 %
 % Goes through all jpgs in an input image, attempts to draw circles over
@@ -126,12 +87,7 @@ end
 
 
 
-% this does a good job of getting the edges in the background and on 
-% the trail marker
-% I'm thinking we can use these edges as input for ransac 
-% and fit it to a circle?
 function xy = object_detection_test(final_images)
-    % TODO: test vision.ForegroundDetector for finding object
 
     % grab foreground image
     bim_name = "IMPORTANT_TEST.jpg";
@@ -321,8 +277,8 @@ function [xy, out_image] = isolate_yellow(image)
 
     out_image = im_yellow;
 
-    figure;
-    imshow(out_image);
+    % figure;
+    % imshow(out_image);
 
     % get the edges from isolated image
     im_edges = edge(im_yellow, 'Canny');
@@ -423,6 +379,61 @@ function get_hist(image)
 
 
 end
+
+
+% tests to fit a perfect circle
+function perfect_circle_test(image_name)
+
+    % perfect circle test
+    perfect_circle = imread(image_name);
+    perfect_circle = rgb2gray(perfect_circle);
+    circle_edges = edge(perfect_circle, "canny");
+    [xy, out_image] = isolate_yellow(perfect_circle);
+    [centers, radii, metric] = imfindcircles(perfect_circle, [100 200]);
+
+end
+
+
+% tests using bstar thresholding 
+function b_star_test(image_name)
+
+    % testing example using b star and threshold
+    image = imread(image_name);
+
+    [height, width, c] = size(image);
+
+    im_kmeans = kmeans2(image);
+
+    get_hist(im_kmeans);
+
+    xy = isolate_yellow(im_kmeans);
+    Ransac_Points_to_Fit(xy, height, width);
+
+end
+
+
+% test using the matlab object detection package
+function object_detection(image_files)
+
+    % init array for all read images
+    final_images = cell(length(image_files), 1);
+
+    for image = 1:length(image_files)
+        % get path to image
+        path = fullfile(folder_name, image_files(image).name);
+        % get the file name
+        im_folder_image = imread(path);
+
+        % add image to final image list
+        final_images{image} = im_folder_image;
+
+    end
+
+    testing foreground detector
+    xy = object_detection_test(final_images);
+
+end
+
 
 
 
