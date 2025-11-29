@@ -5,13 +5,13 @@
 function main()
 
     % get the folder name with all image files
-    % folder_name = 'ADK_Images_Batch_B';
-    % 
-    % classify_images(folder_name);
+    folder_name = 'ADK_Images_Batch_B';
+
+    classify_images(folder_name);
 
     % Histogram back prop testing
-    image = 'trailmarkerOutliers/IMG_20251004_154531932_HDR.jpg';
-    get_hist(image)
+    % image = 'trailmarkerOutliers/IMG_20251004_154531932_HDR.jpg';
+    % get_hist(image)
 
 end
 
@@ -53,8 +53,26 @@ function classify_images(input_dir)
         % do some preprocessing on image
         [xy, out_image] = isolate_yellow(img);
 
+        % replicate all channels to convert back to rgb
+        im_rgb = repmat(out_image, 1, 1, 3);
+
+        % get the back projected histogram of image
+        im_hist = get_hist(im_rgb);
+
+        % normalize hist
+        im_hist = (im_hist - min(im_hist(:))) / (max(im_hist(:)) - min(im_hist(:)));
+
+        % create a mask for all values over 0.3 
+        % (yellow thr based on image sc testing)
+        im_mask = im_hist > 0.3;
+
+        % mask image for optimal circle searching
+        fprintf("out image: %d\n", size(out_image));
+        fprintf("im_mask: %d\n", size(im_mask))
+        masked_image = out_image .* im_mask;
+
         % look for circles in the processed image
-        [centers, radii] = imfindcircles(out_image, ...
+        [centers, radii] = imfindcircles(masked_image, ...
             [100 300], 'ObjectPolarity', 'bright', 'Sensitivity', 0.96);
 
         % if circles found...
@@ -88,169 +106,6 @@ end
 
 
 
-function xy = object_detection_test(folder_name)
-    % get all .jpg files from folder (for object_detection_test)
-    image_files = dir(fullfile(folder_name, '*.jpg'));
-
-    % grab foreground image
-    bim_name = "IMPORTANT_TEST.jpg";
-    foregroundImage = imread(bim_name);
-    fore_double = im2double(foregroundImage);
-    imbstar_f = rgb2lab(fore_double);
-    imbstar_f = imbstar_f(:, :, 3);
-
-    % Create a vision.ForegroundDetector object
-    % The NumTrainingFrames simulates background learning
-    foregroundDetector = vision.ForegroundDetector('NumTrainingFrames', ...
-        length(final_images), 'InitialVariance', 30*30);
-
-    targetSize = size(final_images{1}, [1 2]);
-
-    % for every image in the dir of training background images:
-    for image = 1:length(final_images)
-        cur_image = imresize(final_images{image}, targetSize);
-        im_double = im2double(cur_image);
-        % clean that image!
-        im_lab = rgb2lab(im_double);
-        % b* is the best channel to isolate yellow
-        im_bstar = im_lab(:, :, 3);
-
-        % pass the detection algorithm created to matlab system object
-        % to be run, give the current image as argument for training
-        step(foregroundDetector, im_bstar);
-
-    end
-
-    % Now detect the foreground in the new image
-    foregroundMask = step(foregroundDetector, imbstar_f);
-
-    % use morphology to close the circles
-    foregroundMask = imclose(foregroundMask, strel('disk', 20));
-    
-
-    % Display results
-    figure;
-    subplot(1,2,1); imshow(foregroundImage); title('Input Image');
-    subplot(1,2,2); imshow(foregroundMask); title('Detected Foreground');
-
-    [y, x] = find(foregroundMask);
-
-    x = double(x);
-    y = double(y);
-
-    xy = [x';y'];
-
-
-end
-
-
-
-% TODO: 
-
-function Ransac_Points_to_Fit(xy, height, width) 
-
-    figure();
-    plot( xy(1,:), xy(2,:), 'wo', 'MarkerSize', 3, 'MarkerFaceColor', 'c', 'LineWidth', 1 );
-
-    % set axis equal to the img dimensions
-    axis equal;
-    % flip axis to reflect the transformed vector passed in
-    set(gca, 'YDir', 'reverse'); 
-    grid on;
-    set(gca,'GridAlpha', 1);
-
-    best_num_points = -Inf;
-    best_circle = [];
-    max_iters = 5000; % make super large for sparse circle edges
-
-    for round = 1:max_iters
-        points = 3;
-        % get the indexes of x and y values from the xy array
-        % points is how many rand points we want to grab
-        % size gets number of cols (i.e [x,y] pairs)
-        random_idxs = randperm(size(xy, 2), points);
-        % extract actual xy vals using idxs from ^ 
-        % rand points is now a 2*3 array of xy vals
-        random_points = xy(:, random_idxs);
-
-        % Extract x and y values from the random points
-        x = random_points(1, :);
-        y = random_points(2, :);  
-
-        % --- Fit a circle through 3 points ---
-        % Build linear system: [x y 1] * [A; B; C] = -(x.^2 + y.^2)
-        A_mat = [x, y, ones(size(x))];
-        b_vec = -(x.^2 + y.^2);
-        
-        params = A_mat \ b_vec;  % solve least-squares for A, B, C
-        
-        % Extract circle center and radius
-        a = -params(1) / 2;
-        b = -params(2) / 2;
-        r = sqrt((params(1)^2 + params(2)^2)/4 - params(3));
-
-        % check to make sure the best circle found is within img bounds
-        % if (a - r) < 1 || (a + r) > width || ...
-        %     (b - r) < 1 || (b + r) > height
-        %     continue;
-        % 
-        % end
-         
-        % compute distances of all points to the circle
-        x_all = xy(1, :);
-        y_all = xy(2, :);
-        distances = abs(sqrt((x_all - a).^2 + (y_all - b).^2) - r);
-        
-        % define inliers: points whose distance to circle boundary < threshold
-        threshold = r * 0.02; % make the thr adaptive for different sized markers
-        inliers = distances < threshold;
-        num_inliers = sum(inliers);
-
-        % avoid fitting a circle to random noise by setting a 
-        % min number of points to lie within fit
-        min_inliers = 40;
-        
-        % Update best fit if current model has more inliers
-        if num_inliers > best_num_points && num_inliers > min_inliers
-            best_num_points = num_inliers;
-            best_circle = [a, b, r];
-        end
-
-    end
-
-    % ERROR CHECK 
-    if isempty(best_circle)
-        warning('No valid circle found with current constraints');
-        return;
-    end
-
-
-    % plot the parabola on the gaph of points
-    hold on;
-    % a is the center for x
-    a = best_circle(1);
-    % b is the center for y
-    b = best_circle(2);
-    % r is the radius 
-    r = best_circle(3);
-
-
-    % use parametric equ to plot the circle
-    % 1000 = the number of iterations to fit a circle
-    theta = linspace(0, 2*pi, 1000);
-    x_circle = a + r * cos(theta);
-    y_circle = b + r * sin(theta);
-
-    % plot
-    plot(x_circle, y_circle, 'w-', 'LineWidth', 3);
-    % mark center for testing
-    plot(a, b, 'w+', 'MarkerSize', 20, 'LineWidth', 3);
-
-
-
-end
-
-
 function [xy, out_image] = isolate_yellow(image)
 
     % take b* star of image
@@ -264,24 +119,19 @@ function [xy, out_image] = isolate_yellow(image)
 
     b_thresh = 0.65;
 
-    figure;
-
     % only display where b* is above certain threshold
     im_yellow = im_b_star > b_thresh;
 
-    % % remove little isolated blips
+    % remove little isolated blips
     % im_yellow = imopen(im_yellow, strel('disk', 5));
-    % 
-    % % remove little isolated blips
+    
+    % remove little isolated blips
     % im_yellow = imclose(im_yellow, strel('disk', 5));
 
     % fill in areas completely surrounded by whtie
     im_yellow = imfill(im_yellow, 'holes');
 
     out_image = im_yellow;
-
-    % figure;
-    % imshow(out_image);
 
     % get the edges from isolated image
     im_edges = edge(im_yellow, 'Canny');
@@ -292,6 +142,7 @@ function [xy, out_image] = isolate_yellow(image)
     x = double(x);
     y = double(y);
 
+    % convert to a matrix that works with the ransac algorithm below
     xy = [x';y'];
 end
 
@@ -301,8 +152,9 @@ end
 function yellow_map = get_hist(image)
 
     % read in image and convert to double
-    im_read = imread(image);
-    im_double = im2double(im_read);
+    % im_read = imread(image);
+
+    im_double = im2double(image);
     im_lab = rgb2lab(im_double);
    
     % get a and b star channels from LAB
@@ -352,18 +204,19 @@ function yellow_map = get_hist(image)
     normalized_cols = [normalized_cols; zeros(max_len - length(normalized_cols), 1)];
 
     % multiply for back projection
-    yellow_map = normalized_cols .* normalized_rows;
+    
+    yellow_map = normalized_rows .* normalized_cols';
 
     % display for testing
-    figure;
-    subplot(1, 2, 1);
-    imagesc(yellow_map);
-    colorbar;
-    title("Histogram Back Projection of Yellow");
-
-    subplot(1, 2, 2);
-    bar(yellow_map);
-    title("Histogram Back Projection of Yellow");
+    % figure;
+    % subplot(1, 2, 1);
+    % imagesc(yellow_map);
+    % colorbar;
+    % title("Histogram Back Projection of Yellow");
+    % 
+    % subplot(1, 2, 2);
+    % bar(yellow_map);
+    % title("Histogram Back Projection of Yellow");
 
 
 end
@@ -474,4 +327,163 @@ function im_segmented = kmeans2(image)
 
 end
 
+
+
+function Ransac_Points_to_Fit(xy, height, width) 
+
+    figure();
+    plot( xy(1,:), xy(2,:), 'wo', 'MarkerSize', 3, 'MarkerFaceColor', 'c', 'LineWidth', 1 );
+
+    % set axis equal to the img dimensions
+    axis equal;
+    % flip axis to reflect the transformed vector passed in
+    set(gca, 'YDir', 'reverse'); 
+    grid on;
+    set(gca,'GridAlpha', 1);
+
+    best_num_points = -Inf;
+    best_circle = [];
+    max_iters = 5000; % make super large for sparse circle edges
+
+    for round = 1:max_iters
+        points = 3;
+        % get the indexes of x and y values from the xy array
+        % points is how many rand points we want to grab
+        % size gets number of cols (i.e [x,y] pairs)
+        random_idxs = randperm(size(xy, 2), points);
+        % extract actual xy vals using idxs from ^ 
+        % rand points is now a 2*3 array of xy vals
+        random_points = xy(:, random_idxs);
+
+        % Extract x and y values from the random points
+        x = random_points(1, :);
+        y = random_points(2, :);  
+
+        % --- Fit a circle through 3 points ---
+        % Build linear system: [x y 1] * [A; B; C] = -(x.^2 + y.^2)
+        A_mat = [x, y, ones(size(x))];
+        b_vec = -(x.^2 + y.^2);
+        
+        params = A_mat \ b_vec;  % solve least-squares for A, B, C
+        
+        % Extract circle center and radius
+        a = -params(1) / 2;
+        b = -params(2) / 2;
+        r = sqrt((params(1)^2 + params(2)^2)/4 - params(3));
+
+        % check to make sure the best circle found is within img bounds
+        % if (a - r) < 1 || (a + r) > width || ...
+        %     (b - r) < 1 || (b + r) > height
+        %     continue;
+        % 
+        % end
+         
+        % compute distances of all points to the circle
+        x_all = xy(1, :);
+        y_all = xy(2, :);
+        distances = abs(sqrt((x_all - a).^2 + (y_all - b).^2) - r);
+        
+        % define inliers: points whose distance to circle boundary < threshold
+        threshold = r * 0.02; % make the thr adaptive for different sized markers
+        inliers = distances < threshold;
+        num_inliers = sum(inliers);
+
+        % avoid fitting a circle to random noise by setting a 
+        % min number of points to lie within fit
+        min_inliers = 40;
+        
+        % Update best fit if current model has more inliers
+        if num_inliers > best_num_points && num_inliers > min_inliers
+            best_num_points = num_inliers;
+            best_circle = [a, b, r];
+        end
+
+    end
+
+    % ERROR CHECK 
+    if isempty(best_circle)
+        warning('No valid circle found with current constraints');
+        return;
+    end
+
+
+    % plot the parabola on the gaph of points
+    hold on;
+    % a is the center for x
+    a = best_circle(1);
+    % b is the center for y
+    b = best_circle(2);
+    % r is the radius 
+    r = best_circle(3);
+
+
+    % use parametric equ to plot the circle
+    % 1000 = the number of iterations to fit a circle
+    theta = linspace(0, 2*pi, 1000);
+    x_circle = a + r * cos(theta);
+    y_circle = b + r * sin(theta);
+
+    % plot
+    plot(x_circle, y_circle, 'w-', 'LineWidth', 3);
+    % mark center for testing
+    plot(a, b, 'w+', 'MarkerSize', 20, 'LineWidth', 3);
+
+
+
+end
+
+function xy = object_detection_test(folder_name)
+    % get all .jpg files from folder (for object_detection_test)
+    image_files = dir(fullfile(folder_name, '*.jpg'));
+
+    % grab foreground image
+    bim_name = "IMPORTANT_TEST.jpg";
+    foregroundImage = imread(bim_name);
+    fore_double = im2double(foregroundImage);
+    imbstar_f = rgb2lab(fore_double);
+    imbstar_f = imbstar_f(:, :, 3);
+
+    % Create a vision.ForegroundDetector object
+    % The NumTrainingFrames simulates background learning
+    foregroundDetector = vision.ForegroundDetector('NumTrainingFrames', ...
+        length(final_images), 'InitialVariance', 30*30);
+
+    targetSize = size(final_images{1}, [1 2]);
+
+    % for every image in the dir of training background images:
+    for image = 1:length(final_images)
+        cur_image = imresize(final_images{image}, targetSize);
+        im_double = im2double(cur_image);
+        % clean that image!
+        im_lab = rgb2lab(im_double);
+        % b* is the best channel to isolate yellow
+        im_bstar = im_lab(:, :, 3);
+
+        % pass the detection algorithm created to matlab system object
+        % to be run, give the current image as argument for training
+        step(foregroundDetector, im_bstar);
+
+    end
+
+    % Now detect the foreground in the new image
+    foregroundMask = step(foregroundDetector, imbstar_f);
+
+    % use morphology to close the circles
+    foregroundMask = imclose(foregroundMask, strel('disk', 20));
+    
+
+    % Display results
+    figure;
+    subplot(1,2,1); imshow(foregroundImage); title('Input Image');
+    subplot(1,2,2); imshow(foregroundMask); title('Detected Foreground');
+
+    [y, x] = find(foregroundMask);
+
+    x = double(x);
+    y = double(y);
+
+    xy = [x';y'];
+
+
+end
 

@@ -5,13 +5,13 @@
 function main()
 
     % get the folder name with all image files
-    % folder_name = 'ADK_Images_Batch_B';
+    folder_name = 'trailmarkerOutliers';
 
-    % classify_images(folder_name);
+    classify_images(folder_name);
 
     % Histogram back prop testing
-    image = 'trailmarkerOutliers/IMG_20251004_154531932_HDR.jpg';
-    get_hist(image)
+    % image = 'trailmarkerOutliers/IMG_20251004_154531932_HDR.jpg';
+    % get_hist(image)
 
 end
 
@@ -50,8 +50,30 @@ function classify_images(input_dir)
         fprintf("Processing %s...\n", image_files(i).name);
         img = imread(img_path);
 
+        yellow_hist = get_hist(img);
+
         % do some preprocessing on image
-        [xy, out_image] = isolate_yellow(img);
+        [xy, out_image] = isolate_yellow(yellow_hist);
+
+        % replicate all channels to convert back to rgb
+        % im_rgb = repmat(out_image, 1, 1, 3);
+
+        % get the back projected histogram of image
+        % im_hist = get_hist(im_rgb);
+        % 
+        % % normalize hist
+        % im_hist = (im_hist - min(im_hist(:))) / (max(im_hist(:)) - min(im_hist(:)));
+
+        % create a mask for all values over 0.3 
+        % (yellow thr based on image sc testing)
+        % im_mask = im_hist > 0.3;
+
+        % mask image for optimal circle searching
+        % masked_image = out_image .* im_hist;
+        % 
+        % figure();
+        % imagesc(masked_image);
+        % pause(3);
 
         % look for circles in the processed image
         [centers, radii] = imfindcircles(out_image, ...
@@ -88,95 +110,35 @@ end
 
 
 
-function xy = object_detection_test(folder_name)
-    % get all .jpg files from folder (for object_detection_test)
-    image_files = dir(fullfile(folder_name, '*.jpg'));
-
-    % grab foreground image
-    bim_name = "IMPORTANT_TEST.jpg";
-    foregroundImage = imread(bim_name);
-    fore_double = im2double(foregroundImage);
-    imbstar_f = rgb2lab(fore_double);
-    imbstar_f = imbstar_f(:, :, 3);
-
-    % Create a vision.ForegroundDetector object
-    % The NumTrainingFrames simulates background learning
-    foregroundDetector = vision.ForegroundDetector('NumTrainingFrames', ...
-        length(final_images), 'InitialVariance', 30*30);
-
-    targetSize = size(final_images{1}, [1 2]);
-
-    % for every image in the dir of training background images:
-    for image = 1:length(final_images)
-        cur_image = imresize(final_images{image}, targetSize);
-        im_double = im2double(cur_image);
-        % clean that image!
-        im_lab = rgb2lab(im_double);
-        % b* is the best channel to isolate yellow
-        im_bstar = im_lab(:, :, 3);
-
-        % pass the detection algorithm created to matlab system object
-        % to be run, give the current image as argument for training
-        step(foregroundDetector, im_bstar);
-
-    end
-
-    % Now detect the foreground in the new image
-    foregroundMask = step(foregroundDetector, imbstar_f);
-
-    % use morphology to close the circles
-    foregroundMask = imclose(foregroundMask, strel('disk', 20));
-    
-
-    % Display results
-    figure;
-    subplot(1,2,1); imshow(foregroundImage); title('Input Image');
-    subplot(1,2,2); imshow(foregroundMask); title('Detected Foreground');
-
-    [y, x] = find(foregroundMask);
-
-    x = double(x);
-    y = double(y);
-
-    xy = [x';y'];
-
-
-end
-
-
-
-
 function [xy, out_image] = isolate_yellow(image)
 
     % take b* star of image
-    im_lab = rgb2lab(image);
-    im_b_star = im_lab(:, :, 3);
+    % im_lab = rgb2lab(image);
+    % im_b_star = im_lab(:, :, 3);
+    % 
+    % % normalize b* from [-128, 127] to [0, 1]
+    % im_b_star = (im_b_star + 128) / 255;
 
-    % normalize b* from [-128, 127] to [0, 1]
-    im_b_star = (im_b_star + 128) / 255;
+    % this is a quick fix to test in passing histogram instead of rgb
+    im_b_star = image;
 
     im_b_star = adapthisteq(im_b_star);
 
     b_thresh = 0.65;
 
-    figure;
-
     % only display where b* is above certain threshold
     im_yellow = im_b_star > b_thresh;
 
-    % % remove little isolated blips
+    % remove little isolated blips
     % im_yellow = imopen(im_yellow, strel('disk', 5));
-    % 
-    % % remove little isolated blips
+    
+    % remove little isolated blips
     % im_yellow = imclose(im_yellow, strel('disk', 5));
 
     % fill in areas completely surrounded by whtie
     im_yellow = imfill(im_yellow, 'holes');
 
     out_image = im_yellow;
-
-    % figure;
-    % imshow(out_image);
 
     % get the edges from isolated image
     im_edges = edge(im_yellow, 'Canny');
@@ -187,6 +149,7 @@ function [xy, out_image] = isolate_yellow(image)
     x = double(x);
     y = double(y);
 
+    % convert to a matrix that works with the ransac algorithm below
     xy = [x';y'];
 end
 
@@ -196,13 +159,14 @@ end
 function yellow_map = get_hist(image)
 
     % read in image and convert to double
-    im_read = imread(image);
-    im_double = im2double(im_read);
+    % im_read = imread(image);
+
+    im_double = im2double(image);
     im_lab = rgb2lab(im_double);
-   
+
     % get a and b star channels from LAB
     im_b_star = im_lab(:, :, 3);
-    
+
     % normalize b* from [-128, 127] to [0, 1]
     im_b_star = (im_b_star + 128) / 255;
 
@@ -241,24 +205,19 @@ function yellow_map = get_hist(image)
     normalized_rows = row_yellow_count / max(row_yellow_count);
     normalized_cols = col_yellow_count / max(col_yellow_count);
 
-    % pad to make them the same length to avoid mtx errors
-    max_len = max(length(normalized_rows), length(normalized_cols));
-    normalized_rows = [normalized_rows; zeros(max_len - length(normalized_rows), 1)];
-    normalized_cols = [normalized_cols; zeros(max_len - length(normalized_cols), 1)];
-
     % multiply for back projection
-    yellow_map = normalized_cols .* normalized_rows;
+    yellow_map = normalized_rows .* normalized_cols';
 
     % display for testing
-    figure;
-    subplot(1, 2, 1);
-    imagesc(yellow_map);
-    colorbar;
-    title("Histogram Back Projection of Yellow");
-
-    subplot(1, 2, 2);
-    bar(yellow_map);
-    title("Histogram Back Projection of Yellow");
+    % figure;
+    % subplot(1, 2, 1);
+    % imagesc(yellow_map);
+    % colorbar;
+    % title("Histogram Back Projection of Yellow");
+    % 
+    % subplot(1, 2, 2);
+    % bar(yellow_map);
+    % title("Histogram Back Projection of Yellow");
 
 
 end
@@ -470,6 +429,61 @@ function Ransac_Points_to_Fit(xy, height, width)
     % mark center for testing
     plot(a, b, 'w+', 'MarkerSize', 20, 'LineWidth', 3);
 
+
+
+end
+
+function xy = object_detection_test(folder_name)
+    % get all .jpg files from folder (for object_detection_test)
+    image_files = dir(fullfile(folder_name, '*.jpg'));
+
+    % grab foreground image
+    bim_name = "IMPORTANT_TEST.jpg";
+    foregroundImage = imread(bim_name);
+    fore_double = im2double(foregroundImage);
+    imbstar_f = rgb2lab(fore_double);
+    imbstar_f = imbstar_f(:, :, 3);
+
+    % Create a vision.ForegroundDetector object
+    % The NumTrainingFrames simulates background learning
+    foregroundDetector = vision.ForegroundDetector('NumTrainingFrames', ...
+        length(final_images), 'InitialVariance', 30*30);
+
+    targetSize = size(final_images{1}, [1 2]);
+
+    % for every image in the dir of training background images:
+    for image = 1:length(final_images)
+        cur_image = imresize(final_images{image}, targetSize);
+        im_double = im2double(cur_image);
+        % clean that image!
+        im_lab = rgb2lab(im_double);
+        % b* is the best channel to isolate yellow
+        im_bstar = im_lab(:, :, 3);
+
+        % pass the detection algorithm created to matlab system object
+        % to be run, give the current image as argument for training
+        step(foregroundDetector, im_bstar);
+
+    end
+
+    % Now detect the foreground in the new image
+    foregroundMask = step(foregroundDetector, imbstar_f);
+
+    % use morphology to close the circles
+    foregroundMask = imclose(foregroundMask, strel('disk', 20));
+    
+
+    % Display results
+    figure;
+    subplot(1,2,1); imshow(foregroundImage); title('Input Image');
+    subplot(1,2,2); imshow(foregroundMask); title('Detected Foreground');
+
+    [y, x] = find(foregroundMask);
+
+    x = double(x);
+    y = double(y);
+
+    xy = [x';y'];
 
 
 end
