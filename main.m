@@ -90,7 +90,7 @@ function classify_images(input_dir)
             % draw circles over original image
             out_with_circles = insertShape(img, ...
                 'Circle', circles, ...
-                'Color', 'red', 'LineWidth', 5);
+                'Color', 'red', 'LineWidth', 15);
 
             % output to found trail markers directory
             output_filename = fullfile(output_trail_dir, image_files(i).name);
