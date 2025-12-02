@@ -5,13 +5,46 @@
 function main()
 
     % get the folder name with all image files
-    folder_name = 'ADK_Images_Batch_B';
+    folder_name = 'trailmarkerOutlie';
 
     classify_images(folder_name);
 
-    % Histogram back prop testing
-    % image = 'trailmarkerOutliers/IMG_20251004_154531932_HDR.jpg';
-    % get_hist(image)
+    % SINGLE FILE TEST
+    % ____________________________________________________________
+    
+    image_name = "trailmarkerOutliers/IMG_20251004_154549730.jpg";
+    im_read = imread(image_name);
+
+    im_kmeans = kmeans2(im_read); % comment out if using kmeans_test
+
+    [xy, yellow_edges] = isolate_yellow(im_kmeans);
+    
+    im_hist = get_hist(yellow_edges);
+
+    [centers, radii] = imfindcircles(im_hist, ...
+            [100 300], 'ObjectPolarity', 'bright', 'Sensitivity', 0.96);
+
+    if ~isempty(centers)
+        % convert center+radii into [x y r]
+        circles = [centers radii];
+
+        % draw circles over original image
+        out_with_circles = insertShape(im_read, ...
+            'Circle', circles, ...
+            'Color', 'red', 'LineWidth', 5);
+
+        % output to found trail markers directory
+        imwrite(out_with_circles, "fulloutput_test2.jpg");
+
+    end
+
+    % ____________________________________________________________
+
+
+    % figure;
+    % imagesc(im_hist);
+    % colorbar;
+    % title("histogram of isolated kmeans");
 
 end
 
@@ -51,28 +84,16 @@ function classify_images(input_dir)
         img = imread(img_path);
 
         % do some preprocessing on image
-        [xy, out_image] = isolate_yellow(img);
+        im_clustered = kmeans2(img);
 
-        % replicate all channels to convert back to rgb
-        im_rgb = repmat(out_image, 1, 1, 3);
+        [xy, out_image] = isolate_yellow(im_clustered);
 
-        % get the back projected histogram of image
-        im_hist = get_hist(im_rgb);
+        % get the histogram of isolated image
+        im_hist = get_hist(out_image);
 
-        % normalize hist
-        im_hist = (im_hist - min(im_hist(:))) / (max(im_hist(:)) - min(im_hist(:)));
-
-        % create a mask for all values over 0.3 
-        % (yellow thr based on image sc testing)
-        im_mask = im_hist > 0.3;
-
-        % mask image for optimal circle searching
-        fprintf("out image: %d\n", size(out_image));
-        fprintf("im_mask: %d\n", size(im_mask))
-        masked_image = out_image .* im_mask;
 
         % look for circles in the processed image
-        [centers, radii] = imfindcircles(masked_image, ...
+        [centers, radii] = imfindcircles(im_hist, ...
             [100 300], 'ObjectPolarity', 'bright', 'Sensitivity', 0.96);
 
         % if circles found...
@@ -115,6 +136,9 @@ function [xy, out_image] = isolate_yellow(image)
     % normalize b* from [-128, 127] to [0, 1]
     im_b_star = (im_b_star + 128) / 255;
 
+    % this is a quick fix to test in passing histogram instead of rgb
+    % im_b_star = image;
+
     im_b_star = adapthisteq(im_b_star);
 
     b_thresh = 0.65;
@@ -123,16 +147,17 @@ function [xy, out_image] = isolate_yellow(image)
     im_yellow = im_b_star > b_thresh;
 
     % remove little isolated blips
-    % im_yellow = imopen(im_yellow, strel('disk', 5));
+    im_yellow = imopen(im_yellow, strel('disk', 5));
     
     % remove little isolated blips
-    % im_yellow = imclose(im_yellow, strel('disk', 5));
+    im_yellow = imclose(im_yellow, strel('disk', 8));
 
     % fill in areas completely surrounded by whtie
     im_yellow = imfill(im_yellow, 'holes');
 
     out_image = im_yellow;
 
+    % STEPS FOR USING RANSAC ALGO FROM SCRATCH
     % get the edges from isolated image
     im_edges = edge(im_yellow, 'Canny');
 
@@ -153,31 +178,31 @@ function yellow_map = get_hist(image)
 
     % read in image and convert to double
     % im_read = imread(image);
-
-    im_double = im2double(image);
-    im_lab = rgb2lab(im_double);
-   
-    % get a and b star channels from LAB
-    im_b_star = im_lab(:, :, 3);
-    
-    % normalize b* from [-128, 127] to [0, 1]
-    im_b_star = (im_b_star + 128) / 255;
-
-    im_b_star = adapthisteq(im_b_star);
-
-    b_thresh = 0.65;
-
-    % only display where b* is above certain threshold
-    im_yellow = im_b_star > b_thresh;
+    % 
+    % im_double = im2double(image);
+    % im_lab = rgb2lab(im_double);
+    % 
+    % % get a and b star channels from LAB
+    % im_b_star = im_lab(:, :, 3);
+    % 
+    % % normalize b* from [-128, 127] to [0, 1]
+    % im_b_star = (im_b_star + 128) / 255;
+    % 
+    % im_b_star = adapthisteq(im_b_star);
+    % 
+    % b_thresh = 0.65;
+    % 
+    % % only display where b* is above certain threshold
+    % im_yellow = im_b_star > b_thresh;
 
     % get rows and cols and pre allocate yellow array
-    [rows, cols] = size(im_b_star);
+    [rows, cols] = size(image);
     row_yellow_count = zeros(rows, 1);
 
     % for every row in the image
     for row = 1:rows
         % get the yellow row val
-        row_yel = im_yellow(row, :);
+        row_yel = image(row, :);
         % increment hist array
         row_yellow_count(row) = sum(row_yel);
     end
@@ -187,7 +212,7 @@ function yellow_map = get_hist(image)
     % for every col in the image
     for col = 1:cols
         % get the yellow row val
-        col_yel = im_yellow(:, col);
+        col_yel = image(:, col);
         % increment hist array
         col_yellow_count(col) = sum(col_yel);
     end
@@ -198,25 +223,15 @@ function yellow_map = get_hist(image)
     normalized_rows = row_yellow_count / max(row_yellow_count);
     normalized_cols = col_yellow_count / max(col_yellow_count);
 
-    % pad to make them the same length to avoid mtx errors
-    max_len = max(length(normalized_rows), length(normalized_cols));
-    normalized_rows = [normalized_rows; zeros(max_len - length(normalized_rows), 1)];
-    normalized_cols = [normalized_cols; zeros(max_len - length(normalized_cols), 1)];
-
     % multiply for back projection
-    
     yellow_map = normalized_rows .* normalized_cols';
 
     % display for testing
-    % figure;
-    % subplot(1, 2, 1);
-    % imagesc(yellow_map);
-    % colorbar;
-    % title("Histogram Back Projection of Yellow");
-    % 
-    % subplot(1, 2, 2);
-    % bar(yellow_map);
-    % title("Histogram Back Projection of Yellow");
+    figure;
+    subplot(1, 2, 1);
+    imagesc(yellow_map);
+    colorbar;
+    title("Histogram Back Projection of Yellow");
 
 
 end
@@ -303,27 +318,21 @@ function im_segmented = kmeans2(image)
     % reshape cluster indices back to 2D image
     im_clustered = reshape(cluster_idx, im_rows, im_cols);
     
-    % create colormap using lab values
-    % pick a luminance value for visualization
-    l_val = 60;
-    
-    % For visualization, use average a* value from image
-    a_mean = mean(im_a_star(:));
-    
-    % Combine L, a*, and cluster centers for b*
-    % cluster_center is now k x 1, so we need to add a* column
-    lab_colors = [l_val * ones(k, 1), a_mean * ones(k, 1), cluster_center];
-    
-    % convert to rgb from lab
-    rgb_colors = lab2rgb(lab_colors, 'OutputType', 'double');
-    
-    % ensure val range is normalized to [0, 1] for label2rgb
-    rgb_colors = max(min(rgb_colors, 1), 0);
-    
-    % Display clustered image
-    im_segmented = label2rgb(im_clustered, rgb_colors);
+    % find the smallest cluster
+    cluster_sizes = histcounts(cluster_idx, 1:k+1);
+    [~, smallest_c] = min(cluster_sizes);
+
+    % create custom color pallet 
+    rgb_pallet = zeros(k, 3);
+
+    % make 'best' cluster yellow for yellow isolation
+    rgb_pallet(smallest_c, :) = [1, 1, 0]; 
+
+    im_segmented = label2rgb(im_clustered, rgb_pallet);
+
     figure;
     imshow(im_segmented);
+    title("kmeans clustered");
 
 end
 
