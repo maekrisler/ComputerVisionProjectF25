@@ -5,49 +5,52 @@
 function main()
 
     % get the folder name with all image files
-    folder_name = 'trailmarkerOutliers';
-
-    classify_images(folder_name);
+    % folder_name = 'ADK_Images_Batch_B';
+    % 
+    % classify_images(folder_name);
 
 % SINGLE FILE TEST
 % ____________________________________________________________
     
-    % image_name = "kmeans_test.png";
-    % im_read = imread(image_name);
-    % 
-    % im_kmeans = kmeans2(im_read); % comment out if using kmeans_test
-    % 
-    % [xy, yellow_edges] = isolate_yellow(im_read);
-    % 
+    image_name = "ADK_Images_Batch_B/IMG_20251004_154657509.jpg";
+    im_read = imread(image_name);
+
+    im_kmeans = kmeans2(im_read); % comment out if using kmeans_test
+
+    [xy, yellow_edges] = isolate_yellow(im_read);
+
     % im_hist = get_hist(yellow_edges);
     % 
     % im_hist = im_hist > 0.3;
 
 
-    % [centers, radii] = imfindcircles(im_hist, ...
-    %         [100 300], 'ObjectPolarity', 'bright', 'Sensitivity', 0.96);
-    % 
-    % if ~isempty(centers)
-    %     % convert center+radii into [x y r]
-    %     circles = [centers radii];
-    % 
-    %     % draw circles over original image
-    %     out_with_circles = insertShape(im_read, ...
-    %         'Circle', circles, ...
-    %         'Color', 'red', 'LineWidth', 5);
-    % 
-    %     % output to found trail markers directory
-    %     imwrite(out_with_circles, "fulloutput_test2.jpg");
-    % 
-    % end
+    [centers, radii] = imfindcircles(yellow_edges, ...
+            [100 300], 'ObjectPolarity', 'bright', 'Sensitivity', 0.96);
+
+    if ~isempty(centers)
+        % convert center+radii into [x y r]
+        circles = [centers radii];
+
+        % draw circles over original image
+        out_with_circles = insertShape(im_read, ...
+            'Circle', circles, ...
+            'Color', 'red', 'LineWidth', 5);
+
+        % output to found trail markers directory
+        imwrite(out_with_circles, "fulloutput_test2.jpg");
+    else
+        disp("no markers found :(");
+
+    end
+
+    figure;
+    imshow(im_kmeans);
+    colorbar;
+    title("isolated kmeans");
 
 % ____________________________________________________________
 
 
-    figure;
-    imagesc(im_hist);
-    colorbar;
-    title("histogram of isolated kmeans");
 
 end
 
@@ -92,12 +95,12 @@ function classify_images(input_dir)
         [xy, out_image] = isolate_yellow(im_clustered);
 
         % get the histogram of isolated image
-        im_hist = get_hist(out_image);
-
-        im_hist = im_hist > 0.2
+        % im_hist = get_hist(out_image);
+        % 
+        % im_hist = im_hist > 0.2;
 
         % look for circles in the processed image
-        [centers, radii] = imfindcircles(im_hist, ...
+        [centers, radii] = imfindcircles(out_image, ...
             [100 300], 'ObjectPolarity', 'bright', 'Sensitivity', 0.96);
 
         % if circles found...
@@ -321,16 +324,36 @@ function im_segmented = kmeans2(image)
     
     % reshape cluster indices back to 2D image
     im_clustered = reshape(cluster_idx, im_rows, im_cols);
-    
-    % find the smallest cluster
-    cluster_sizes = histcounts(cluster_idx, 1:k+1);
-    [~, smallest_c] = min(cluster_sizes);
 
-    % create custom color pallet 
+    % reshape original image to match the flattened data used in kmeans
+    im_reshaped = reshape(image, im_rows * im_cols, 3);
+
+    % get cluster with the higest b* value (most yellow
+    [~, yellow_cluster] = max(cluster_center);
+    
+    % get the mean of rgb color for each cluster
     rgb_pallet = zeros(k, 3);
 
-    % make 'best' cluster yellow for yellow isolation
-    rgb_pallet(smallest_c, :) = [1, 1, 0]; 
+    for i = 1:k
+        cluster_mask = cluster_idx == 1;
+        cluster_pix = im_reshaped(cluster_mask, :);
+        rgb_pallet(i, :) = mean(cluster_pix, 1);
+    end
+
+    rgb_pallet(yellow_cluster, :) = [1, 1, 0];
+
+    % rgb_pallet = max(min(rgb_pallet, 1), 0);
+    % 
+    % % ensure no color is too dark (to avoid ZEROCOLOR warnings)
+    % % if a color is too dark, boost its brightness
+    % min_brightness = 0.3;  % adjust this threshold as needed
+    % for i = 1:k
+    %     brightness = mean(rgb_pallet(i, :));
+    %     if brightness < min_brightness && i ~= yellow_cluster
+    %         rgb_pallet(i, :) = rgb_pallet(i, :) * (min_brightness / (brightness + eps));
+    %         rgb_pallet(i, :) = min(rgb_pallet(i, :), 1);  % clip to [0, 1]
+    %     end
+    % end
 
     im_segmented = label2rgb(im_clustered, rgb_pallet);
 
