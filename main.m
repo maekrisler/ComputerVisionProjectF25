@@ -15,7 +15,7 @@ function main()
     image_name = "ADK_Images_Batch_B/IMG_20251004_154657509.jpg";
     im_read = imread(image_name);
 
-    im_kmeans = kmeans2(im_read); % comment out if using kmeans_test
+    im_kmeans = kmeans3(im_read); % comment out if using kmeans_test
 
     [xy, yellow_edges] = isolate_yellow(im_read);
 
@@ -43,10 +43,10 @@ function main()
 
     end
 
-    figure;
-    imshow(im_kmeans);
-    colorbar;
-    title("isolated kmeans");
+    % figure;
+    % imshow(im_kmeans);
+    % colorbar;
+    % title("isolated kmeans");
 
 % ____________________________________________________________
 
@@ -298,7 +298,7 @@ function object_detection(image_files)
 end
 
 
-function im_segmented = kmeans2(image)
+function im_palletized = kmeans2(image)
     % smooth image for noise removal
     % im_smooth = noise_removal(image);
     
@@ -328,38 +328,54 @@ function im_segmented = kmeans2(image)
     % reshape original image to match the flattened data used in kmeans
     im_reshaped = reshape(image, im_rows * im_cols, 3);
 
-    % get cluster with the higest b* value (most yellow
-    [~, yellow_cluster] = max(cluster_center);
-    
-    % get the mean of rgb color for each cluster
+    % define pallet array
     rgb_pallet = zeros(k, 3);
 
-    for i = 1:k
-        cluster_mask = cluster_idx == 1;
+    % create rgb pallet
+    for cluster = 1:k
+        % create logical mask to isolate current cluster
+        cluster_mask = (cluster_idx == cluster);
+        % get rgb values from pixels in the cur cluster
         cluster_pix = im_reshaped(cluster_mask, :);
-        rgb_pallet(i, :) = mean(cluster_pix, 1);
+        % use mean rgb val as cluster color
+        rgb_pallet(cluster, :) = mean(cluster_pix, 1);
     end
 
-    rgb_pallet(yellow_cluster, :) = [1, 1, 0];
-
-    % rgb_pallet = max(min(rgb_pallet, 1), 0);
-    % 
-    % % ensure no color is too dark (to avoid ZEROCOLOR warnings)
-    % % if a color is too dark, boost its brightness
-    % min_brightness = 0.3;  % adjust this threshold as needed
-    % for i = 1:k
-    %     brightness = mean(rgb_pallet(i, :));
-    %     if brightness < min_brightness && i ~= yellow_cluster
-    %         rgb_pallet(i, :) = rgb_pallet(i, :) * (min_brightness / (brightness + eps));
-    %         rgb_pallet(i, :) = min(rgb_pallet(i, :), 1);  % clip to [0, 1]
-    %     end
-    % end
-
-    im_segmented = label2rgb(im_clustered, rgb_pallet);
+    % create palletized image using rgb pallet
+    im_palletized = zeros(im_rows, im_cols, 3);
+    for r = 1:im_rows
+        for c = 1:im_cols
+            cur_cluster = im_clustered(r, c);
+            im_palletized(r, c, :) = rgb_pallet(cur_cluster, :);
+        end
+    end
 
     figure;
-    imshow(im_segmented);
-    title("kmeans clustered");
+    imshow(im_palletized);
+    title("kmeans clustered and palletized");
+
+end
+
+
+function im_clustered = kmeans3(image)
+
+    im_smooth = imgaussfilt(image, 2);
+    lab_he = rgb2lab(im_smooth);
+    ab = lab_he(:,:,2:3);
+    ab = im2single(ab);
+    k = 10;
+    pixel_labels = imsegkmeans(ab,k,NumAttempts=3);
+    
+    for cluster = 1:k
+        maskk = pixel_labels == cluster;
+        cur_cluster = image.*uint8(maskk);
+        figure;
+        imshow(cur_cluster);
+        title("current cluster " + string(cluster));
+        pause(1);
+    end
+
+    im_clustered = labeloverlay(image,pixel_labels);
 
 end
 

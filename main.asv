@@ -5,23 +5,26 @@
 function main()
 
     % get the folder name with all image files
-    folder_name = 'trailmarkerOutlie';
+    % folder_name = 'ADK_Images_Batch_B';
+    % 
+    % classify_images(folder_name);
 
-    classify_images(folder_name);
-
-    % SINGLE FILE TEST
-    % ____________________________________________________________
+% SINGLE FILE TEST
+% ____________________________________________________________
     
-    image_name = "trailmarkerOutliers/IMG_20251004_154549730.jpg";
+    image_name = "ADK_Images_Batch_B/IMG_20251004_154657509.jpg";
     im_read = imread(image_name);
 
-    im_kmeans = kmeans2(im_read); % comment out if using kmeans_test
+    im_kmeans = kmeans3(im_read); % comment out if using kmeans_test
 
-    [xy, yellow_edges] = isolate_yellow(im_kmeans);
-    
-    im_hist = get_hist(yellow_edges);
+    [xy, yellow_edges] = isolate_yellow(im_read);
 
-    [centers, radii] = imfindcircles(im_hist, ...
+    % im_hist = get_hist(yellow_edges);
+    % 
+    % im_hist = im_hist > 0.3;
+
+
+    [centers, radii] = imfindcircles(yellow_edges, ...
             [100 300], 'ObjectPolarity', 'bright', 'Sensitivity', 0.96);
 
     if ~isempty(centers)
@@ -35,16 +38,19 @@ function main()
 
         % output to found trail markers directory
         imwrite(out_with_circles, "fulloutput_test2.jpg");
+    else
+        disp("no markers found :(");
 
     end
 
-    % ____________________________________________________________
+    figure;
+    imshow(im_kmeans);
+    colorbar;
+    title("isolated kmeans");
+
+% ____________________________________________________________
 
 
-    % figure;
-    % imagesc(im_hist);
-    % colorbar;
-    % title("histogram of isolated kmeans");
 
 end
 
@@ -89,11 +95,12 @@ function classify_images(input_dir)
         [xy, out_image] = isolate_yellow(im_clustered);
 
         % get the histogram of isolated image
-        im_hist = get_hist(out_image);
-
+        % im_hist = get_hist(out_image);
+        % 
+        % im_hist = im_hist > 0.2;
 
         % look for circles in the processed image
-        [centers, radii] = imfindcircles(im_hist, ...
+        [centers, radii] = imfindcircles(out_image, ...
             [100 300], 'ObjectPolarity', 'bright', 'Sensitivity', 0.96);
 
         % if circles found...
@@ -291,7 +298,7 @@ function object_detection(image_files)
 end
 
 
-function im_segmented = kmeans2(image)
+function im_palletized = kmeans2(image)
     % smooth image for noise removal
     % im_smooth = noise_removal(image);
     
@@ -317,22 +324,49 @@ function im_segmented = kmeans2(image)
     
     % reshape cluster indices back to 2D image
     im_clustered = reshape(cluster_idx, im_rows, im_cols);
-    
-    % find the smallest cluster
-    cluster_sizes = histcounts(cluster_idx, 1:k+1);
-    [~, smallest_c] = min(cluster_sizes);
 
-    % create custom color pallet 
+    % reshape original image to match the flattened data used in kmeans
+    im_reshaped = reshape(image, im_rows * im_cols, 3);
+
+    % define pallet array
     rgb_pallet = zeros(k, 3);
 
-    % make 'best' cluster yellow for yellow isolation
-    rgb_pallet(smallest_c, :) = [1, 1, 0]; 
+    % create rgb pallet
+    for cluster = 1:k
+        % create logical mask to isolate current cluster
+        cluster_mask = (cluster_idx == cluster);
+        % get rgb values from pixels in the cur cluster
+        cluster_pix = im_reshaped(cluster_mask, :);
+        % use mean rgb val as cluster color
+        rgb_pallet(cluster, :) = mean(cluster_pix, 1);
+    end
 
-    im_segmented = label2rgb(im_clustered, rgb_pallet);
+    % create palletized image using rgb pallet
+    im_palletized = zeros(im_rows, im_cols, 3);
+    for r = 1:im_rows
+        for c = 1:im_cols
+            cur_cluster = im_clustered(r, c);
+            im_palletized(r, c, :) = rgb_pallet(cur_cluster, :);
+        end
+    end
 
     figure;
-    imshow(im_segmented);
-    title("kmeans clustered");
+    imshow(im_palletized);
+    title("kmeans clustered and palletized");
+
+end
+
+
+function im_clustered = kmeans3(image)
+
+    lab_he = rgb2lab(image);
+    ab = lab_he(:,:,2:3);
+    ab = im2single(ab);
+    pixel_labels = imsegkmeans(ab,10,NumAttempts=3);
+
+    for cluster = 1:k
+
+    im_clustered = labeloverlay(image,pixel_labels);
 
 end
 
