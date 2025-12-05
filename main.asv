@@ -12,16 +12,15 @@ function main()
 % SINGLE FILE TEST
 % ____________________________________________________________
     
-    image_name = "ADK_Images_Batch_B/IMG_20251004_154657509.jpg";
+    image_name = "ADK_Images_Batch_B/IMG_20251004_154703800.jpg";
     im_read = imread(image_name);
 
     im_kmeans = kmeans3(im_read); % comment out if using kmeans_test
+    figure;
+    imshow(im_kmeans);
+    title("kmeans before morphology");
 
-    [xy, yellow_edges] = isolate_yellow(im_read);
-
-    % im_hist = get_hist(yellow_edges);
-    % 
-    % im_hist = im_hist > 0.3;
+    yellow_edges = isolate_yellow(im_kmeans);
 
 
     [centers, radii] = imfindcircles(yellow_edges, ...
@@ -44,9 +43,9 @@ function main()
     end
 
     figure;
-    imshow(im_kmeans);
+    imshow(yellow_edges);
     colorbar;
-    title("isolated kmeans");
+    title("kmeans with morphology");
 
 % ____________________________________________________________
 
@@ -90,14 +89,9 @@ function classify_images(input_dir)
         img = imread(img_path);
 
         % do some preprocessing on image
-        im_clustered = kmeans2(img);
+        im_clustered = kmeans3(img);
 
-        [xy, out_image] = isolate_yellow(im_clustered);
-
-        % get the histogram of isolated image
-        % im_hist = get_hist(out_image);
-        % 
-        % im_hist = im_hist > 0.2;
+        out_image = isolate_yellow(im_clustered);
 
         % look for circles in the processed image
         [centers, radii] = imfindcircles(out_image, ...
@@ -134,24 +128,29 @@ end
 
 
 
-function [xy, out_image] = isolate_yellow(image)
+function out_image = isolate_yellow(image)
 
-    % take b* star of image
-    im_lab = rgb2lab(image);
-    im_b_star = im_lab(:, :, 3);
+    
+    im_gray = rgb2gray(image);
 
-    % normalize b* from [-128, 127] to [0, 1]
-    im_b_star = (im_b_star + 128) / 255;
+    im_gray = im2single(im_gray);
 
-    % this is a quick fix to test in passing histogram instead of rgb
-    % im_b_star = image;
+    im_b_star = adapthisteq(im_gray);
 
-    im_b_star = adapthisteq(im_b_star);
+    figure;
+    imshow(im_b_star);
+    colorbar;
+    title("b* before morphology");
 
-    b_thresh = 0.65;
+    b_thresh = 0.45;
 
     % only display where b* is above certain threshold
     im_yellow = im_b_star > b_thresh;
+
+    figure;
+    imshow(im_yellow);
+    colorbar;
+    title("yellow after thr");
 
     % remove little isolated blips
     im_yellow = imopen(im_yellow, strel('disk', 5));
@@ -164,18 +163,6 @@ function [xy, out_image] = isolate_yellow(image)
 
     out_image = im_yellow;
 
-    % STEPS FOR USING RANSAC ALGO FROM SCRATCH
-    % get the edges from isolated image
-    im_edges = edge(im_yellow, 'Canny');
-
-    % convert to a [x, y] mtx for ransac
-    [y, x] = find(im_edges);
-
-    x = double(x);
-    y = double(y);
-
-    % convert to a matrix that works with the ransac algorithm below
-    xy = [x';y'];
 end
 
 
@@ -251,28 +238,11 @@ function perfect_circle_test(image_name)
     perfect_circle = imread(image_name);
     perfect_circle = rgb2gray(perfect_circle);
     circle_edges = edge(perfect_circle, "canny");
-    [xy, out_image] = isolate_yellow(perfect_circle);
+    out_image = isolate_yellow(perfect_circle);
     [centers, radii, metric] = imfindcircles(perfect_circle, [100 200]);
 
 end
 
-
-% tests using bstar thresholding 
-function b_star_test(image_name)
-
-    % testing example using b star and threshold
-    image = imread(image_name);
-
-    [height, width, c] = size(image);
-
-    im_kmeans = kmeans2(image);
-
-    get_hist(im_kmeans);
-
-    xy = isolate_yellow(im_kmeans);
-    Ransac_Points_to_Fit(xy, height, width);
-
-end
 
 
 % test using the matlab object detection package
@@ -359,14 +329,27 @@ end
 
 function im_clustered = kmeans3(image)
 
-    lab_he = rgb2lab(image);
+    im_smooth = imgaussfilt(image, 4);
+    lab_he = rgb2lab(im_smooth);
     ab = lab_he(:,:,2:3);
     ab = im2single(ab);
-    pixel_labels = imsegkmeans(ab,10,NumAttempts=3);
-
+    k = 10;
+    pixel_labels = imsegkmeans(ab,k,NumAttempts=3);
+    
+    b_star_means = zeros(k, 1);
     for cluster = 1:k
+        cluster_mask = pixel_labels == cluster;
+        b_star_means(cluster) = mean(ab(cluster_mask));
+    end
 
-    im_clustered = labeloverlay(image,pixel_labels);
+    % Sort b* means in descending order and get indices
+    [~, sorted_indices] = sort(b_star_means, 'descend');
+
+    [~, yellow_cluster] = max(b_star_means);
+
+    best_mask = pixel_labels == yellow_cluster;
+    im_clustered = im_smooth.*uint8(best_mask);
+
 
 end
 
