@@ -12,10 +12,11 @@ function main()
 % SINGLE FILE TEST
 % ____________________________________________________________
     
-    % image_name = "misc_tests/IMPORTANT_TEST.jpg";
+    % image_name = "ADK_Images_Batch_B/IMG_20251004_154703800.jpg";
     % im_read = imread(image_name);
     % 
     % im_kmeans = kmeans3(im_read); % comment out if using kmeans_test
+    % 
     % figure;
     % imshow(im_kmeans);
     % title("kmeans before morphology");
@@ -335,23 +336,25 @@ function im_clustered = kmeans3(image)
     ab = im2single(ab);
     
     
-    k = 3;
+    k = 10;
     pixel_labels = imsegkmeans(ab,k,NumAttempts=3);
     
     b_star_means = zeros(k, 1);
     for cluster = 1:k
         cluster_mask = pixel_labels == cluster;
         b_star_means(cluster) = mean(ab(cluster_mask));
+
+        % Display each cluster in its own figure
+        cur_cluster = im_smooth .* uint8(cluster_mask);
+        figure;
+        imshow(cur_cluster);
+        title("Cluster " + string(cluster) + " - b* mean: " + string(b_star_means(cluster)));
     end
 
-    % Sort b* means in descending order and get indices
-    [~, sorted_indices] = sort(b_star_means, 'descend');
+    yellow_cluster = max(b_star_means);
 
-    yellow_cluster = sorted_indices(1);
-
-    best_mask = pixel_labels == yellow_cluster;
+    best_mask = pixel_labels == 6; % HARD CODED TEST
     im_clustered = im_smooth.*uint8(best_mask);
-
 
 end
 
